@@ -9,7 +9,7 @@ companies:
   - name: Anthropic
   - name: Waymo
   - name: Fleet AI
-    slugs: [fleetai, fleet-ai, fleet]
+    slugs: []  # UNRESOLVED: greenhouse/fleet is an industrial firm, not Fleet AI — needs the right careers URL
   - name: Deep Tune
     slugs: [deeptune, deep-tune]
   - name: Handshake AI
@@ -38,24 +38,24 @@ companies:
   - name: Two Sigma
     slugs: [twosigma, two-sigma]
   - name: Edison Scientific
-    slugs: [edisonscientific, edison-scientific, edison]
+    slugs: ["Edison Scientific"]
   - name: Neuralink
   - name: Outtake
     slugs: [outtake, outtakeai, outtake-ai]
   - name: VoltAI
-    slugs: [voltai, volt-ai]
+    slugs: [voltai.careers]  # lever/voltai is a different Volt
   - name: Genesis
-    slugs: [genesis, genesis-ai, genesisai]
+    slugs: [genesis]  # ashby/genesis = Genesis AI robotics; greenhouse/genesis is empty/other
   - name: Architect Labs
     slugs: [architectlabs, architect-labs, architect]
   - name: Mechanize
     slugs: [mechanize, mechanize-work, mechanizework]
   - name: Parallel
-    slugs: [parallel, parallel-web, parallelweb]
+    slugs: [parallel]  # ashby/parallel = parallel.ai; greenhouse/parallel is a different company
   - name: Runway
-    slugs: [runwayml, runway]
+    slugs: [runway-ml, runwayml]
   - name: Applied Compute
-    slugs: [appliedcompute, applied-compute]
+    slugs: ["Applied Compute", appliedcompute, applied-compute]
   - name: Thinking Machines
     slugs: [thinkingmachines, thinking-machines, thinking-machines-lab]
   - name: Cognition
@@ -67,4 +67,4 @@ companies:
   - name: OpenEvidence
     slugs: [openevidence, open-evidence]
   - name: Clay
-    slugs: [clay, clay-earth, clayrun]
+    slugs: [claylabs, clay]
