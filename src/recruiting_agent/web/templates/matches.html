@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% from "macros.html" import match_row %}
+{% block content %}
+<h2>Matches</h2>
+<form method="get" action="/matches" class="grid">
+  <label>Min score
+    <input type="number" name="min_score" value="{{ min_score }}" min="0" max="100">
+  </label>
+  <label>Review status
+    <select name="status">
+      {% for opt in ["new", "all", "saved", "applied", "dismissed"] %}
+      <option value="{{ opt }}" {{ "selected" if status == opt }}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Recommendation
+    <select name="rec">
+      {% for opt in ["all", "apply", "maybe", "skip"] %}
+      <option value="{{ opt }}" {{ "selected" if rec == opt }}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>&nbsp;<button type="submit">Filter</button></label>
+</form>
+
+<p class="muted">{{ rows|length }} matches</p>
+<table>
+  <thead><tr><th>Score</th><th>Role</th><th>Link</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for match, job, company, red_flags in rows %}
+    {{ match_row(match, job, company, red_flags) }}
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

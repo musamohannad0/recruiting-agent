@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Recruiting Agent{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <style>
+    :root { --pico-font-size: 15px; }
+    body > main { max-width: 1200px; margin: 0 auto; padding: 0 1rem; }
+    nav.topnav { padding: .5rem 1rem; border-bottom: 1px solid var(--pico-muted-border-color); margin-bottom: 1.5rem; }
+    nav.topnav a { margin-right: 1rem; text-decoration: none; }
+    nav.topnav a.active { font-weight: 700; }
+    .score { font-weight: 700; padding: .1rem .5rem; border-radius: .4rem; color: #fff; display: inline-block; min-width: 2.4rem; text-align: center; }
+    .score-hi { background: #1a7f37; }
+    .score-mid { background: #bf8700; }
+    .score-lo { background: #8b949e; }
+    .rec-apply { color: #1a7f37; font-weight: 600; }
+    .rec-maybe { color: #bf8700; font-weight: 600; }
+    .rec-skip { color: #8b949e; }
+    .muted { color: var(--pico-muted-color); font-size: .85em; }
+    td, th { padding: .35rem .5rem; }
+    details summary { cursor: pointer; }
+    .badge { background: #cf222e; color: #fff; border-radius: 1rem; padding: 0 .5rem; font-size: .8em; }
+    .status-btns button { padding: .1rem .5rem; font-size: .8em; margin: 0 .1rem; width: auto; display: inline-block; }
+    .reasoning { max-width: 46rem; }
+    pre.desc { white-space: pre-wrap; font-family: inherit; background: none; padding: 0; }
+  </style>
+</head>
+<body>
+<nav class="topnav">
+  <a href="/" class="{{ 'active' if active_page == 'overview' }}">Overview</a>
+  <a href="/matches" class="{{ 'active' if active_page == 'matches' }}">Matches</a>
+  <a href="/jobs" class="{{ 'active' if active_page == 'jobs' }}">Jobs</a>
+  <a href="/companies" class="{{ 'active' if active_page == 'companies' }}">Companies</a>
+  <a href="/runs" class="{{ 'active' if active_page == 'runs' }}">Runs</a>
+  <a href="/settings" class="{{ 'active' if active_page == 'settings' }}">Settings</a>
+</nav>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<div class="status-btns">
+  {% if match.user_status %}<em>{{ match.user_status }}</em>{% endif %}
+  {% for s, label in [("saved", "★ save"), ("applied", "✓ applied"), ("dismissed", "✕ dismiss"), ("new", "reset")] %}
+    {% if match.user_status != s and not (s == "new" and not match.user_status) %}
+    <button class="secondary outline"
+            hx-post="/matches/{{ match.id }}/status"
+            hx-vals='{"user_status": "{{ s }}"}'
+            hx-target="#status-{{ match.id }}"
+            hx-swap="innerHTML">{{ label }}</button>
+    {% endif %}
+  {% endfor %}
+</div>

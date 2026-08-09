@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Companies</h2>
+
+{% if pending %}
+<article>
+  <header><strong>Awaiting approval</strong> <span class="badge">{{ pending|length }}</span></header>
+  <ul>
+    {% for c in pending %}
+    <li><strong>{{ c.name }}</strong> — {{ c.discovery_rationale }}
+      {% if c.careers_url %}<a href="{{ c.careers_url }}" target="_blank">careers ↗</a>{% endif %}
+      <form method="post" action="/companies/{{ c.id }}/decision" style="display:inline">
+        <button name="decision" value="approve" style="width:auto;display:inline-block;padding:.1rem .5rem">approve</button>
+        <button name="decision" value="reject" class="secondary" style="width:auto;display:inline-block;padding:.1rem .5rem">reject</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</article>
+{% endif %}
+
+<table>
+  <thead><tr><th>Company</th><th>Status</th><th>ATS</th><th>Open roles</th><th>Last ingest</th><th></th></tr></thead>
+  <tbody>
+  {% for c, job_count in rows %}
+  <tr>
+    <td><strong>{{ c.name }}</strong>{% if c.source == "discovered" %} <span class="muted">(discovered)</span>{% endif %}</td>
+    <td>{{ c.status }}</td>
+    <td class="muted">{{ c.ats_type }}{% if c.board_token %}/{{ c.board_token }}{% endif %}</td>
+    <td>{{ job_count }}</td>
+    <td class="muted">
+      {% if c.last_ingest_error %}<span style="color:#cf222e">error: {{ c.last_ingest_error[:60] }}</span>
+      {% elif c.last_ingest_at %}{{ c.last_ingest_at.strftime("%m-%d %H:%M") }}
+      {% else %}—{% endif %}
+    </td>
+    <td>
+      {% if c.status == "active" %}
+      <form method="post" action="/companies/{{ c.id }}/decision"><button name="decision" value="pause" class="secondary outline" style="width:auto;padding:.1rem .5rem;font-size:.8em">pause</button></form>
+      {% elif c.status == "paused" %}
+      <form method="post" action="/companies/{{ c.id }}/decision"><button name="decision" value="activate" class="outline" style="width:auto;padding:.1rem .5rem;font-size:.8em">resume</button></form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

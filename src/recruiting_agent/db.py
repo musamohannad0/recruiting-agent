@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
+from sqlalchemy import event
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from .models import DEFAULT_SETTINGS, Setting
@@ -10,6 +11,15 @@ from .settings import settings
 
 settings.data_dir.mkdir(parents=True, exist_ok=True)
 engine = create_engine(f"sqlite:///{settings.db_path}", connect_args={"check_same_thread": False})
+
+
+@event.listens_for(engine, "connect")
+def _sqlite_pragmas(dbapi_connection, _record):
+    # WAL lets the dashboard read while a pipeline run writes.
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=15000")
+    cursor.close()
 
 
 def init_db() -> None:

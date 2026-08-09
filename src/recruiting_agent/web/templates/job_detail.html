@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "macros.html" import score_badge %}
+{% block title %}{{ job.title }} — {{ company.name }}{% endblock %}
+{% block content %}
+<h2>{{ job.title }}</h2>
+<p class="muted">{{ company.name }} · {{ job.location or "—" }}{% if job.department %} · {{ job.department }}{% endif %}
+  · <a href="{{ job.url }}" target="_blank">posting ↗</a>
+  {% if job.apply_url and job.apply_url != job.url %} · <a href="{{ job.apply_url }}" target="_blank">apply ↗</a>{% endif %}
+</p>
+
+{% if match %}
+<article>
+  <header>{{ score_badge(match.score) }} <span class="rec-{{ match.recommendation }}">{{ match.recommendation }}</span></header>
+  <p>{{ match.reasoning }}</p>
+  {% if red_flags %}<p><strong>Red flags:</strong></p><ul>{% for f in red_flags %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
+  <p class="muted">Seniority: {{ match.seniority_fit }}<br>Location: {{ match.location_fit }}</p>
+  <footer class="muted">{{ match.model }} · {{ match.created_at.strftime("%Y-%m-%d %H:%M") }}</footer>
+</article>
+{% elif prefilter %}
+<article>
+  <header>Prefilter: <strong>{{ prefilter.verdict }}</strong></header>
+  <p class="muted">{{ prefilter.reason }} ({{ prefilter.model }})</p>
+</article>
+{% else %}
+<p class="muted">Not yet evaluated.</p>
+{% endif %}
+
+<h3>Description</h3>
+<pre class="desc">{{ job.description_md }}</pre>
+{% endblock %}

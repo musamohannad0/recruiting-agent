@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Jobs</h2>
+<form method="get" action="/jobs" class="grid">
+  <label>Company
+    <select name="company_id">
+      <option value="">all</option>
+      {% for c in companies %}
+      <option value="{{ c.id }}" {{ "selected" if company_id == c.id }}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Title contains
+    <input type="text" name="q" value="{{ q }}">
+  </label>
+  <label>&nbsp;<button type="submit">Filter</button></label>
+</form>
+<p class="muted">{{ rows|length }} open roles</p>
+<table>
+  <thead><tr><th>Title</th><th>Company</th><th>Location</th><th>First seen</th></tr></thead>
+  <tbody>
+  {% for job, company in rows %}
+  <tr>
+    <td><a href="/jobs/{{ job.id }}">{{ job.title }}</a></td>
+    <td>{{ company.name }}</td>
+    <td class="muted">{{ job.location or "—" }}</td>
+    <td class="muted">{{ job.first_seen_at.strftime("%Y-%m-%d") }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
