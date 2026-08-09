@@ -1,0 +1,12 @@
+# Environment
+.env
+
+# Data (DB, artifacts, browser profile)
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+.pytest_cache/

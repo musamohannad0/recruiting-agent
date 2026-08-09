@@ -1,0 +1,70 @@
+# Seed list of tracked companies.
+# `ra probe` resolves each company's ATS (greenhouse/lever/ashby) and board token
+# by trying slug variants against the public job-board APIs; add `slugs:` hints for
+# names whose board token isn't an obvious variant of the company name.
+companies:
+  - name: Periodic Labs
+    slugs: [periodiclabs, periodic-labs, periodic]
+  - name: Suno
+  - name: Anthropic
+  - name: Waymo
+  - name: Fleet AI
+    slugs: [fleetai, fleet-ai, fleet]
+  - name: Deep Tune
+    slugs: [deeptune, deep-tune]
+  - name: Handshake AI
+    slugs: [handshake, handshakeai]
+  - name: Fluidstack
+    slugs: [fluidstack, fluid-stack]
+  - name: Etched
+    slugs: [etched, etched-ai, etchedai]
+  - name: Lila Sciences
+    slugs: [lilasciences, lila-sciences, lila]
+  - name: Physical Intelligence
+    slugs: [physicalintelligence, physical-intelligence, pi]
+  - name: Baseten
+  - name: ElevenLabs
+    slugs: [elevenlabs, eleven-labs]
+  - name: Sierra
+    slugs: [sierra, sierra-ai]
+  - name: Metronome
+    slugs: [metronome, getmetronome]
+  - name: DeepMind
+    slugs: [deepmind, google-deepmind]
+  - name: Abridge
+  - name: Fireworks AI
+    slugs: [fireworksai, fireworks-ai, fireworks]
+  - name: Wayve
+  - name: Two Sigma
+    slugs: [twosigma, two-sigma]
+  - name: Edison Scientific
+    slugs: [edisonscientific, edison-scientific, edison]
+  - name: Neuralink
+  - name: Outtake
+    slugs: [outtake, outtakeai, outtake-ai]
+  - name: VoltAI
+    slugs: [voltai, volt-ai]
+  - name: Genesis
+    slugs: [genesis, genesis-ai, genesisai]
+  - name: Architect Labs
+    slugs: [architectlabs, architect-labs, architect]
+  - name: Mechanize
+    slugs: [mechanize, mechanize-work, mechanizework]
+  - name: Parallel
+    slugs: [parallel, parallel-web, parallelweb]
+  - name: Runway
+    slugs: [runwayml, runway]
+  - name: Applied Compute
+    slugs: [appliedcompute, applied-compute]
+  - name: Thinking Machines
+    slugs: [thinkingmachines, thinking-machines, thinking-machines-lab]
+  - name: Cognition
+    slugs: [cognition, cognition-ai, cognitionai]
+  - name: World Labs
+    slugs: [worldlabs, world-labs, worldlabs-ai]
+  - name: Together AI
+    slugs: [togetherai, together-ai, together]
+  - name: OpenEvidence
+    slugs: [openevidence, open-evidence]
+  - name: Clay
+    slugs: [clay, clay-earth, clayrun]
