@@ -27,14 +27,10 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    scheduler = None
-    try:
-        from ..pipeline.scheduler import build_scheduler
+    from ..pipeline.scheduler import build_scheduler
 
-        scheduler = build_scheduler()
-        scheduler.start()
-    except Exception:
-        pass
+    scheduler = build_scheduler()
+    scheduler.start()
     yield
     if scheduler is not None:
         scheduler.shutdown(wait=False)
