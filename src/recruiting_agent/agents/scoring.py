@@ -4,7 +4,7 @@ from ..settings import settings
 from .llm import LLMResult, llm_json
 from .profile import Profile
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 SYSTEM_PROMPT = """\
 You are an exacting career advisor evaluating whether a specific job posting is a \
@@ -24,10 +24,19 @@ adjacent role family, heavy domain requirement the candidate lacks).
 
 Judge on substance, not title keywords. A "Chief of Staff" or "Strategic Projects" \
 role that is really business operations can score high; an "Operations" role that is \
-really warehouse logistics or people ops should score low. Weigh seniority \
-honestly: the candidate has ~5 years (3 consulting, 2 bizops) — flag roles wanting \
-10+ years or deep domain expertise she lacks as red flags. Consider location \
-against preferences (NYC, SF, US-remote; open to relocation).
+really warehouse logistics or people ops should score low.
+
+Seniority: do NOT anchor on years-of-experience. The candidate (~5 years: 3 \
+consulting, 2 bizops) wants the coolest, highest-impact roles and is happy to \
+stretch — a posting asking for 6-7 years or a bigger scope than she's held is NOT \
+a meaningful penalty. Only penalize egregious gaps: hard requirements of 8+ years, \
+VP/executive scope, or deep domain expertise she clearly lacks. Ambition in a role \
+is a plus, not a red flag.
+
+Location is a hard constraint: New York, San Francisco / Bay Area, or US-remote \
+only. If the role is based outside the US (London, Singapore, EMEA, APAC, ...) \
+with no NYC/SF/US-remote option, score it <=40 and recommend "skip" regardless of \
+role fit.
 
 recommendation: "apply" (>=75 and no disqualifying red flag), "maybe" (60-74 or \
 strong fit with one real concern), else "skip"."""

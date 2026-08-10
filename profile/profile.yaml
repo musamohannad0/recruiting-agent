@@ -19,6 +19,10 @@ target_roles:
 
 seniority:
   # ~5 years total: 3y BCG consulting + 2y MongoDB BizOps.
+  # Do NOT anchor heavily on years-of-experience. A stretch role is fine and
+  # often desirable — prioritize how exciting/high-impact the role is. Only
+  # treat seniority as disqualifying when it's egregious (hard 8-10+ year
+  # requirements, VP/C-level scope) or clearly junior (intern/new-grad).
   target_levels: [Senior Analyst, Associate, Senior Associate, Manager, Lead]
   avoid: [VP, Director-with-10y-requirement, C-level, Intern, New Grad]
 
@@ -30,13 +34,18 @@ strengths:
   - Working effectively with engineering teams; technical fluency in database/infra products
 
 preferences:
-  locations: [New York, San Francisco, Remote (US)]
-  open_to_relocation: true
+  # STRONG constraint: New York or San Francisco (Bay Area). US-remote is
+  # acceptable. Roles based outside the US — London, Singapore, EMEA, APAC,
+  # etc. — are NOT of interest and should be rejected, unless the posting
+  # explicitly offers a NYC/SF or US-remote option.
+  locations: [New York, San Francisco (Bay Area), Remote (US)]
+  exclude_locations: [London, Singapore, EMEA, APAC, Dublin, Tokyo, non-US]
   notes: >
-    Frontier AI labs and high-growth AI startups strongly preferred.
-    Interesting adjacent titles (e.g. Chief of Staff, Strategic Projects,
-    Revenue Strategy, Monetization) are worth surfacing even if the title
-    doesn't literally match the target list — judge on substance.
+    Frontier AI labs and high-growth AI startups strongly preferred — optimize
+    for the coolest, highest-impact roles, not the safest fit. Interesting
+    adjacent titles (e.g. Chief of Staff, Strategic Projects, Revenue Strategy,
+    Monetization) are worth surfacing even if the title doesn't literally match
+    the target list — judge on substance.
 
 hard_filters:
   # The prefilter may reject these outright.

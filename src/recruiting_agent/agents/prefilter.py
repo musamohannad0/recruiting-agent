@@ -16,9 +16,14 @@ description. Titles are noisy — a "Chief of Staff", "Strategic Projects", "Rev
 Strategy", "Monetization", or ambiguous operations title can absolutely be a fit for \
 a business-operations candidate. When in doubt, mark it plausible.
 
-Reject only postings that clearly cannot fit the profile's target roles and hard \
-filters: e.g. IC software/ML engineering, research scientist, hardware engineering, \
-quota-carrying sales, recruiting, legal, internships, facilities.
+Reject only postings that clearly cannot fit:
+- Wrong role family per the profile's hard filters: IC software/ML engineering, \
+research scientist, hardware engineering, quota-carrying sales, recruiting, legal, \
+internships, facilities.
+- Wrong location: the candidate only wants New York, San Francisco / Bay Area, or \
+US-remote. Reject roles whose stated location is clearly outside the US (London, \
+Singapore, Dublin, Tokyo, EMEA, APAC, etc.) with no US option shown. If the \
+location is missing or ambiguous, do not reject on location.
 
 Return a verdict for EVERY index in the input list, in order."""
 
