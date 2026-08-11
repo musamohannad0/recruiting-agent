@@ -107,6 +107,7 @@ class Match(SQLModel, table=True):
     model: str = ""
     prompt_version: str = ""
     langfuse_trace_id: str | None = None
+    cost_usd: float | None = None
     user_status: str | None = Field(default=None, index=True)  # saved | dismissed | applied
     created_at: datetime = Field(default_factory=utcnow)
 

@@ -1,0 +1,24 @@
+name: Big Tech
+description: Large technology companies with broad engineering and product organizations.
+companies:
+  - name: Google
+    careers_url: https://www.google.com/about/careers/applications/jobs/results
+    slugs: [google]
+  - name: Meta
+    careers_url: https://www.metacareers.com/jobs
+    slugs: [meta, facebook]
+  - name: Apple
+    careers_url: https://jobs.apple.com/en-us/search
+    slugs: [apple]
+  - name: Amazon
+    careers_url: https://www.amazon.jobs/en/search
+    slugs: [amazon]
+  - name: Microsoft
+    careers_url: https://jobs.careers.microsoft.com/global/en/search
+    slugs: [microsoft]
+  - name: Netflix
+    careers_url: https://jobs.netflix.com/search
+    slugs: [netflix]
+  - name: NVIDIA
+    careers_url: https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite
+    slugs: [nvidia]

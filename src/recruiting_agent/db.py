@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Iterator
 
-from sqlalchemy import event, text
+from sqlalchemy import event, inspect as sqlalchemy_inspect, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
 from .models import CoordinatorLease, DEFAULT_SETTINGS, JobReview, Match, Setting
@@ -62,11 +62,28 @@ def _run_migrations() -> None:
                 if match.job_id in seen_jobs:
                     continue
                 seen_jobs.add(match.job_id)
-                session.add(JobReview(job_id=match.job_id, user_status=match.user_status))
+                existing_review = session.exec(
+                    select(JobReview).where(JobReview.job_id == match.job_id)
+                ).first()
+                if existing_review is None:
+                    session.add(JobReview(job_id=match.job_id, user_status=match.user_status))
             session.exec(
                 text(
                     "INSERT INTO schema_migrations(version, applied_at) "
                     "VALUES (1, CURRENT_TIMESTAMP)"
+                )
+            )
+        if 2 not in applied:
+            match_columns = {
+                column["name"]
+                for column in sqlalchemy_inspect(session.connection()).get_columns("matches")
+            }
+            if "cost_usd" not in match_columns:
+                session.exec(text("ALTER TABLE matches ADD COLUMN cost_usd REAL"))
+            session.exec(
+                text(
+                    "INSERT INTO schema_migrations(version, applied_at) "
+                    "VALUES (2, CURRENT_TIMESTAMP)"
                 )
             )
         session.commit()

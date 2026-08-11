@@ -63,3 +63,26 @@ def test_harness_hash_changes_when_approved_policy_changes(tmp_path: Path):
     policy.write_text(policy.read_text() + "\nNew approved constraint.\n")
 
     assert ws.compute_hash() != original
+
+
+def test_strict_big_tech_calibration_never_adds_unapproved_companies(tmp_path: Path):
+    ws = CandidateWorkspace(tmp_path)
+    ws.store_resume("resume.pdf", b"resume")
+    complete_interview(ws)
+    ws.save_company_calibration(
+        scope="strict",
+        excited=["Google", "Microsoft"],
+        acceptable=[],
+        excluded=["Frontier AI startups"],
+    )
+    ws.save_role_calibration(
+        target_roles=["Software Engineer"],
+        excited_examples="Infrastructure engineering",
+        pass_examples="Business operations",
+    )
+    ws.activate()
+
+    config = yaml.safe_load(ws.read_section("policy/companies.yaml"))
+    assert config["scope"] == "strict"
+    assert config["excited"] == ["Google", "Microsoft"]
+    assert "Anthropic" not in config["excited"]

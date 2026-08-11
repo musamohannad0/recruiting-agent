@@ -50,9 +50,9 @@ async def _discover() -> dict:
 
 
 async def _scout_unsupported() -> dict:
-    # JobSource provides the durable boundary; source-specific web scouting can be
-    # attached without changing the coordinator contract.
-    return {"sources_checked": 0, "status": "no agentic sources due"}
+    from .agents.role_discovery import run_role_discovery
+
+    return await run_role_discovery()
 
 
 @dataclass

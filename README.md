@@ -1,67 +1,66 @@
 # recruiting-agent
 
-Long-running personal recruiting agent. Each clone or deployment belongs to one
+A long-running personal recruiting agent. Each clone or deployment belongs to one
 candidate and develops a private, calibrated search harness over time.
 
 ## How it works
 
-```
-ingest ──► prefilter ──► score ──► dashboard
- ATS APIs   Haiku, lenient  Sonnet, full   review & apply
- (Greenhouse/ title-level    description,   manually
- Lever/Ashby) gate           0–100 + why
+On first launch, the dashboard asks for a resume, conducts a brief adaptive
+interview, calibrates company and role judgment, and writes a private gitignored
+`workspace/`. The uploaded resume remains intact; the interview agent inspects the
+file and asks decision-relevant follow-ups.
+
+The active search then runs as bounded, restartable cycles:
+
+```text
+wake → ingest → prefilter → score → consolidate memory → digest → checkpoint
 ```
 
-- **Ingest** — every tracked company's public ATS API (Greenhouse / Lever / Ashby).
-  `ra probe` auto-detects each company's board. Postings are deduped by
-  `(company, external_id)`; edits are detected via content hash.
-- **Prefilter** — a cheap, lenient Haiku pass over title/department/location in
-  batches of 25. Judges substance, not keywords: "Chief of Staff" or "Strategic
-  Projects" pass through; IC engineering/research roles are rejected.
-- **Score** — Sonnet reads the full description against `profile/resume.md` +
-  `profile/profile.yaml` and returns a 0–100 score, apply/maybe/skip
-  recommendation, reasoning, and red flags. Results are cached per
-  (job content, profile version) — editing your profile re-scores everything.
-- **Discover** — weekly WebSearch agent proposes companies allowed by the candidate thesis; they
-  land as *pending approval* on the dashboard, never auto-tracked.
-- **Dashboard** — review matches (save / applied / dismiss), browse jobs,
-  manage companies, watch run history. Scheduler runs ingest+match every 2h.
+- Greenhouse, Lever, and Ashby connectors ingest authoritative job boards.
+- Candidate-specific behavior comes from the workspace search constitution,
+  decision rubric, company thesis, calibration anchors, and approved memory.
+- Job content and complete harness hashes prevent unnecessary re-evaluation.
+- An immutable event history and idempotent actions make cycles safe to retry.
+- Explicit corrections can propose memory changes, but policy changes require
+  candidate approval.
+- Company discovery follows `strict` or `exploratory` scope and never activates a
+  suggestion automatically.
 
 ## Setup
 
 ```bash
 uv sync
-cp .env.example .env   # optional: Langfuse keys for LLM tracing
-uv run ra seed         # load config/companies.yaml into the DB
-uv run ra probe        # resolve each company's ATS board
+cp .env.example .env       # optional API/tracing configuration
+uv run ra serve            # http://127.0.0.1:8000
 ```
 
-LLM calls go through the Claude Agent SDK and use your authenticated `claude` CLI
-(or `ANTHROPIC_API_KEY` if set).
-
-## Usage
+Complete onboarding in the browser, then resolve and ingest the approved company
+sources:
 
 ```bash
-uv run ra ingest         # fetch open roles from all boards
-uv run ra match          # prefilter + score anything new
-uv run ra discover       # scout new frontier companies
-uv run ra serve          # dashboard at http://127.0.0.1:8000 (+ scheduler)
-uv run pytest            # connector & dedupe tests
+uv run ra probe
+uv run ra run-cycle
+uv run ra worker           # persistent local scheduler, separate from the web app
 ```
 
-On first launch, the dashboard asks for a resume, conducts a brief adaptive
-interview, calibrates company and role judgment, and writes a private gitignored
-`workspace/`. The uploaded resume remains intact; the interview agent inspects it
-and asks only decision-relevant follow-ups.
+For an existing checkout, `uv run ra import-legacy` copies the old tracked profile
+and company list into the private workspace before onboarding continues.
 
-Run the dashboard and scheduler separately:
+## Useful commands
 
 ```bash
-uv run ra serve    # web UI only
-uv run ra worker   # restartable coordinator wakes
+uv run ra ingest
+uv run ra match
+uv run ra discover
+uv run ra run-cycle --trigger manual
+uv run pytest
 ```
 
-Every cycle reloads the approved search constitution, calibration anchors, event
-history, and checkpoint. It never depends on one indefinitely running model
-conversation. See `docs/modal.md` for the optional single-candidate Modal scaffold.
-Companies live in `config/companies.yaml`; `ra probe` resolves new entries.
+The dashboard exposes Today, Matches, Companies, Search State, Agent Activity,
+Memory Revisions, Feedback, and Source Health. It remains a manual decision tool;
+the agent does not apply to jobs or contact anyone.
+
+Every scheduled task reconstructs coherence from the approved harness, event
+history, and checkpoint. It does not depend on one indefinitely running model
+conversation. See [`docs/modal.md`](docs/modal.md) for the optional bespoke Modal
+deployment scaffold.
