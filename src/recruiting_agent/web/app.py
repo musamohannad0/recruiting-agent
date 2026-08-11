@@ -4,7 +4,7 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
+from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import func, select
@@ -19,6 +19,7 @@ from ..models import (
     PrefilterVerdict,
     Run,
 )
+from ..workspace import OnboardingStage, workspace
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -27,20 +28,99 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    from ..pipeline.scheduler import build_scheduler
-
-    scheduler = build_scheduler()
-    scheduler.start()
     yield
-    if scheduler is not None:
-        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="Recruiting Agent", lifespan=lifespan)
 
 
+@app.middleware("http")
+async def require_onboarding(request: Request, call_next):
+    if not workspace.is_ready and not request.url.path.startswith("/onboarding"):
+        return RedirectResponse("/onboarding", status_code=303)
+    return await call_next(request)
+
+
 def render(request: Request, template: str, **ctx) -> HTMLResponse:
     return templates.TemplateResponse(request, template, ctx)
+
+
+@app.get("/onboarding", response_class=HTMLResponse)
+async def onboarding(request: Request):
+    if workspace.is_ready:
+        return RedirectResponse("/", status_code=303)
+    state = workspace.load_state()
+    question = state.get("current_question")
+    if state["stage"] == OnboardingStage.interview.value and not question:
+        from ..agents.interview import OnboardingInterviewer
+
+        question = await OnboardingInterviewer(workspace).next_question()
+        state = workspace.load_state()
+    return render(
+        request,
+        "onboarding.html",
+        active_page="onboarding",
+        stage=state["stage"],
+        state=state,
+        question=question,
+        stages=OnboardingStage,
+    )
+
+
+@app.post("/onboarding/resume")
+async def onboarding_resume(resume: UploadFile = File(...)):
+    workspace.store_resume(resume.filename or "resume.pdf", await resume.read())
+    return RedirectResponse("/onboarding", status_code=303)
+
+
+@app.post("/onboarding/interview")
+def onboarding_interview(question: str = Form(...), answer: str = Form(...)):
+    workspace.record_answer(question, answer)
+    return RedirectResponse("/onboarding", status_code=303)
+
+
+def _csv(value: str) -> list[str]:
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+@app.post("/onboarding/companies")
+def onboarding_companies(
+    scope: str = Form(...),
+    excited: str = Form(""),
+    acceptable: str = Form(""),
+    excluded: str = Form(""),
+):
+    workspace.save_company_calibration(
+        scope=scope,
+        excited=_csv(excited),
+        acceptable=_csv(acceptable),
+        excluded=_csv(excluded),
+    )
+    return RedirectResponse("/onboarding", status_code=303)
+
+
+@app.post("/onboarding/roles")
+def onboarding_roles(
+    target_roles: str = Form(...),
+    excited_examples: str = Form(""),
+    pass_examples: str = Form(""),
+):
+    workspace.save_role_calibration(
+        target_roles=_csv(target_roles),
+        excited_examples=excited_examples,
+        pass_examples=pass_examples,
+    )
+    return RedirectResponse("/onboarding", status_code=303)
+
+
+@app.post("/onboarding/activate")
+def onboarding_activate():
+    workspace.activate()
+    from ..seed import seed_companies
+
+    with get_session() as session:
+        seed_companies(session)
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/", response_class=HTMLResponse)

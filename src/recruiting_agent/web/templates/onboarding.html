@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Onboarding — Recruiting Agent{% endblock %}
+{% block content %}
+<h2>Build your search agent</h2>
+<p class="muted">Your resume and candidate harness stay in this deployment's private workspace.</p>
+
+<progress value="{{ ['resume','interview','company_calibration','role_calibration','review','ready'].index(stage) + 1 }}" max="6"></progress>
+
+{% if stage == "resume" %}
+<article>
+  <header><strong>1. Upload your resume</strong></header>
+  <p>The interview agent will inspect the original file and ask only the questions that materially affect your search.</p>
+  <form method="post" action="/onboarding/resume" enctype="multipart/form-data">
+    <label>Resume <input type="file" name="resume" accept=".pdf,.docx,.txt,.md" required></label>
+    <button type="submit">Continue</button>
+  </form>
+</article>
+{% elif stage == "interview" %}
+<article>
+  <header><strong>2. Brief interview</strong> <span class="muted">{{ state.question_index + 1 }} of about 8</span></header>
+  <p>{{ question }}</p>
+  <form method="post" action="/onboarding/interview">
+    <input type="hidden" name="question" value="{{ question }}">
+    <textarea name="answer" rows="5" required autofocus></textarea>
+    <button type="submit">Answer</button>
+  </form>
+</article>
+{% elif stage == "company_calibration" %}
+<article>
+  <header><strong>3. Calibrate the company universe</strong></header>
+  <form method="post" action="/onboarding/companies">
+    <label>Search boundary
+      <select name="scope">
+        <option value="strict">Strict — only companies I approve</option>
+        <option value="exploratory">Exploratory — suggest adjacent companies for approval</option>
+      </select>
+    </label>
+    <label>Companies that excite you <input name="excited" placeholder="Google, Microsoft, Apple"></label>
+    <label>Companies you would consider <input name="acceptable" placeholder="Comma-separated"></label>
+    <label>Companies or archetypes to exclude <input name="excluded" placeholder="Early startups, ad-tech"></label>
+    <button type="submit">Continue</button>
+  </form>
+</article>
+{% elif stage == "role_calibration" %}
+<article>
+  <header><strong>4. Calibrate role judgment</strong></header>
+  <form method="post" action="/onboarding/roles">
+    <label>Target roles <input name="target_roles" placeholder="Software Engineer, ML Engineer" required></label>
+    <label>Roles or work that should excite the agent<textarea name="excited_examples" rows="4"></textarea></label>
+    <label>Roles or work the agent should pass on<textarea name="pass_examples" rows="4"></textarea></label>
+    <button type="submit">Continue</button>
+  </form>
+</article>
+{% elif stage == "review" %}
+<article>
+  <header><strong>5. Review and activate</strong></header>
+  <p><strong>Resume:</strong> {{ state.resume_path }}</p>
+  <p><strong>Company scope:</strong> {{ state.company_calibration.scope }}</p>
+  <p><strong>Excited companies:</strong> {{ state.company_calibration.excited|join(', ') or 'None yet' }}</p>
+  <p><strong>Target roles:</strong> {{ state.role_calibration.target_roles|join(', ') }}</p>
+  <details><summary>Interview answers</summary>
+    {% for item in state.answers %}<p><strong>{{ item.question }}</strong><br>{{ item.answer }}</p>{% endfor %}
+  </details>
+  <form method="post" action="/onboarding/activate"><button type="submit">Activate my agent</button></form>
+</article>
+{% endif %}
+{% endblock %}

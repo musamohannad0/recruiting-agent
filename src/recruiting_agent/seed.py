@@ -5,9 +5,14 @@ from sqlmodel import Session, select
 
 from .models import Company
 from .settings import settings
+from .workspace import workspace
 
 
 def load_company_config() -> list[dict]:
+    if workspace.is_ready:
+        candidate_config = workspace.root / "policy" / "companies.yaml"
+        data = yaml.safe_load(candidate_config.read_text()) or {}
+        return [{"name": name} for name in data.get("excited", []) + data.get("acceptable", [])]
     with open(settings.companies_yaml) as f:
         return yaml.safe_load(f)["companies"]
 
