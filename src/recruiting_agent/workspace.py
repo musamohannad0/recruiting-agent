@@ -95,6 +95,7 @@ class CandidateWorkspace:
             if existing != target:
                 existing.unlink()
         target.write_bytes(content)
+        self._install_generic_skills()
         state = self.load_state()
         state["resume_path"] = target.relative_to(self.root).as_posix()
         state["stage"] = OnboardingStage.interview.value

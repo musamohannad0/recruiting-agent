@@ -3,29 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..settings import settings
-from .llm import llm_json
 from .profile import Profile
+from .runtime import AgentRuntime, TaskSpec, default_runtime
 
 SYSTEM_PROMPT = """\
-You are a lenient first-pass screener for a job search. You will see a candidate \
-profile and a numbered list of job postings (title, company, department, location \
-only). Decide for each posting whether it could PLAUSIBLY be a fit worth a closer look.
-
-Be generous: this is only a cheap gate before a smarter model reads the full job \
-description. Titles are noisy — a "Chief of Staff", "Strategic Projects", "Revenue \
-Strategy", "Monetization", or ambiguous operations title can absolutely be a fit for \
-a business-operations candidate. When in doubt, mark it plausible.
-
-Reject only postings that clearly cannot fit:
-- Wrong role family per the profile's hard filters: IC software/ML engineering, \
-research scientist, hardware engineering, quota-carrying sales, recruiting, legal, \
-internships, facilities.
-- Wrong location: the candidate only wants New York, San Francisco / Bay Area, or \
-US-remote. Reject roles whose stated location is clearly outside the US (London, \
-Singapore, Dublin, Tokyo, EMEA, APAC, etc.) with no US option shown. If the \
-location is missing or ambiguous, do not reject on location.
-
-Return a verdict for EVERY index in the input list, in order."""
+You are a lenient first-pass screener for a job search. Apply the candidate's
+confirmed search constitution and hard constraints. Titles are noisy, so judge the
+likely substance of the work. Reject only when the limited posting metadata clearly
+violates an explicit constraint; otherwise mark the role plausible. Return a verdict
+for every input index in order."""
 
 BATCH_SIZE = 25
 
@@ -58,7 +44,11 @@ class PrefilterInput:
     location: str | None
 
 
-async def prefilter_batch(profile: Profile, jobs: list[PrefilterInput]) -> dict[int, tuple[str, str]]:
+async def prefilter_batch(
+    profile: Profile,
+    jobs: list[PrefilterInput],
+    runtime: AgentRuntime | None = None,
+) -> dict[int, tuple[str, str]]:
     """Returns {job_id: (verdict, reason)}. Missing verdicts default to plausible."""
     lines = [
         f"{i}. {j.title} — {j.company}"
@@ -66,20 +56,20 @@ async def prefilter_batch(profile: Profile, jobs: list[PrefilterInput]) -> dict[
         + (f" | {j.location}" if j.location else "")
         for i, j in enumerate(jobs)
     ]
-    prompt = (
-        "## Candidate profile\n\n"
-        + profile.profile_yaml
-        + "\n\n## Job postings\n\n"
-        + "\n".join(lines)
-    )
-    result = await llm_json(
+    task = TaskSpec(
         name="prefilter",
         model=settings.prefilter_model,
         system_prompt=SYSTEM_PROMPT,
-        prompt=prompt,
         schema=SCHEMA,
+        context_sections=("policy/search-constitution.md", "policy/decision-rubric.md"),
+        skills=("candidate-search-policy", "evaluate-role"),
         effort="low",
+    )
+    result = await (runtime or default_runtime()).run(
+        task,
+        "## Job postings\n\n" + "\n".join(lines),
         metadata={"batch_size": len(jobs)},
+        fallback_context=profile.profile_yaml,
     )
     by_index = {v["index"]: v for v in result.data.get("verdicts", [])}
     out: dict[int, tuple[str, str]] = {}
