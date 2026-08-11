@@ -7,6 +7,8 @@ from ..settings import settings
 from ..workspace import CandidateWorkspace, workspace
 from .llm import LLMResult, llm_json
 
+BUILTIN_TOOLS = {"Read", "WebSearch", "WebFetch"}
+
 
 @dataclass(frozen=True)
 class TaskSpec:
@@ -39,6 +41,15 @@ class AgentRuntime:
         full_prompt = prompt
         if context:
             full_prompt = f"## Candidate harness\n\n{context}\n\n## Task\n\n{prompt}"
+        builtins = [name for name in task.tools if name in BUILTIN_TOOLS]
+        custom = [name for name in task.tools if name not in BUILTIN_TOOLS]
+        mcp_servers = None
+        allowed_tools = list(builtins)
+        if custom:
+            from .tools import build_candidate_tools_server
+
+            mcp_servers = {"candidate": build_candidate_tools_server(self.candidate_workspace, custom)}
+            allowed_tools.extend(f"mcp__candidate__{name}" for name in custom)
         return await llm_json(
             name=task.name,
             model=task.model,
@@ -47,11 +58,12 @@ class AgentRuntime:
             schema=task.schema,
             effort=task.effort,
             metadata={"harness_hash": self.candidate_workspace.harness_hash, **(metadata or {})},
-            tools=list(task.tools),
-            allowed_tools=list(task.tools),
+            tools=builtins,
+            allowed_tools=allowed_tools,
             skills=list(task.skills) if task.skills and self.candidate_workspace.is_ready else None,
             cwd=self.candidate_workspace.root,
             max_turns=task.max_turns,
+            mcp_servers=mcp_servers,
         )
 
 

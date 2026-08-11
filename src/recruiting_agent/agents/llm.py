@@ -49,6 +49,7 @@ async def llm_json(
     skills: list[str] | None = None,
     cwd: Path | None = None,
     max_turns: int = 3,
+    mcp_servers: dict | None = None,
 ) -> LLMResult:
     """Structured Agent SDK call with explicit capabilities and tracing."""
     options = ClaudeAgentOptions(
@@ -59,6 +60,7 @@ async def llm_json(
         skills=skills,
         cwd=cwd,
         setting_sources=["project"] if cwd else [],
+        mcp_servers=mcp_servers or {},
         # Structured output consumes an internal tool turn.
         max_turns=max_turns,
         effort=effort,

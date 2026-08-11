@@ -53,10 +53,48 @@ def match(
 
 @app.command()
 def discover() -> None:
-    """Search for new frontier companies; adds them as pending approval."""
+    """Search for companies allowed by the candidate thesis; adds pending suggestions."""
     from .agents.discovery import run_discovery
 
     asyncio.run(run_discovery())
+
+
+@app.command("run-cycle")
+def run_cycle(trigger: str = typer.Option("manual", help="Reason for waking the coordinator")) -> None:
+    """Run one bounded, restartable long-running-agent cycle."""
+    from .coordinator import SearchCoordinator
+
+    result = asyncio.run(SearchCoordinator().run_cycle(trigger))
+    typer.echo(result)
+
+
+@app.command()
+def worker() -> None:
+    """Run the local scheduler separately from the dashboard web process."""
+    from .pipeline.scheduler import build_scheduler
+
+    async def serve_scheduler() -> None:
+        scheduler = build_scheduler()
+        scheduler.start()
+        typer.echo("Coordinator worker started. Press Ctrl-C to stop.")
+        try:
+            await asyncio.Event().wait()
+        finally:
+            scheduler.shutdown(wait=False)
+
+    try:
+        asyncio.run(serve_scheduler())
+    except KeyboardInterrupt:
+        pass
+
+
+@app.command("import-legacy")
+def import_legacy() -> None:
+    """Copy the tracked legacy profile and company list into the private workspace."""
+    from .workspace import workspace
+
+    workspace.import_legacy()
+    typer.echo(f"Legacy inputs copied to {workspace.root}; continue onboarding in the dashboard.")
 
 
 @app.command()
@@ -65,7 +103,7 @@ def serve(
     port: int = typer.Option(8000),
     reload: bool = typer.Option(False),
 ) -> None:
-    """Run the dashboard web server (with the background scheduler)."""
+    """Run the dashboard web server. Use `ra worker` for scheduled cycles."""
     import uvicorn
 
     uvicorn.run("recruiting_agent.web.app:app", host=host, port=port, reload=reload)

@@ -13,11 +13,14 @@ from ..db import get_session, get_setting, init_db, set_setting
 from ..models import (
     Company,
     CompanyStatus,
+    Feedback,
     Job,
+    JobReview,
     Match,
     Prefilter,
     PrefilterVerdict,
     Run,
+    utcnow,
 )
 from ..workspace import OnboardingStage, workspace
 
@@ -166,19 +169,27 @@ def _match_rows(s, min_score: int = 0, limit: int = 500, status: str = "all", re
         select(Match, Job, Company)
         .join(Job, Match.job_id == Job.id)
         .join(Company, Job.company_id == Company.id)
-        .where(Match.score >= min_score, Job.is_active == True)  # noqa: E712
-        .order_by(Match.score.desc(), Match.created_at.desc())
+        .where(Job.is_active == True)  # noqa: E712
+        .order_by(Match.created_at.desc())
     )
     rows = s.exec(query).all()
+    reviews = {review.job_id: review for review in s.exec(select(JobReview)).all()}
     seen: set[int] = set()
     out = []
     for match, job, company in rows:
+        if workspace.is_ready and match.profile_hash != workspace.harness_hash:
+            continue
         if job.id in seen:
             continue
         seen.add(job.id)
-        if status == "new" and match.user_status is not None:
+        if match.score < min_score:
             continue
-        if status not in ("all", "new") and match.user_status != status:
+        review = reviews.get(job.id)
+        review_status = review.user_status if review else None
+        match.user_status = review_status
+        if status == "new" and review_status is not None:
+            continue
+        if status not in ("all", "new") and review_status != status:
             continue
         if rec != "all" and match.recommendation != rec:
             continue
@@ -210,10 +221,14 @@ def set_match_status(request: Request, match_id: int, user_status: str = Form(..
     with get_session() as s:
         match = s.get(Match, match_id)
         if match:
-            match.user_status = None if user_status == "new" else user_status
-            s.add(match)
+            review = s.exec(select(JobReview).where(JobReview.job_id == match.job_id)).first()
+            if review is None:
+                review = JobReview(job_id=match.job_id)
+            review.user_status = None if user_status == "new" else user_status
+            review.updated_at = utcnow()
+            s.add(review)
             s.commit()
-            s.refresh(match)
+            match.user_status = review.user_status
     return HTMLResponse(
         templates.get_template("partials/match_status.html").render(match=match)
     )
@@ -250,11 +265,13 @@ def job_detail(request: Request, job_id: int):
     with get_session() as s:
         job = s.get(Job, job_id)
         company = s.get(Company, job.company_id)
-        match = s.exec(
-            select(Match)
-            .where(Match.job_id == job_id)
-            .order_by(Match.created_at.desc())
-        ).first()
+        match_query = select(Match).where(Match.job_id == job_id)
+        if workspace.is_ready:
+            match_query = match_query.where(Match.profile_hash == workspace.harness_hash)
+        match = s.exec(match_query.order_by(Match.created_at.desc())).first()
+        review = s.exec(select(JobReview).where(JobReview.job_id == job_id)).first()
+        if match:
+            match.user_status = review.user_status if review else None
         prefilter = s.exec(
             select(Prefilter)
             .where(Prefilter.job_id == job_id)
@@ -271,6 +288,15 @@ def job_detail(request: Request, job_id: int):
         prefilter=prefilter,
         red_flags=red_flags,
     )
+
+
+@app.post("/jobs/{job_id}/feedback")
+def job_feedback(job_id: int, label: str = Form(...), reason: str = Form("")):
+    with get_session() as s:
+        if s.get(Job, job_id) is not None:
+            s.add(Feedback(job_id=job_id, label=label, reason=reason.strip()))
+            s.commit()
+    return RedirectResponse(f"/jobs/{job_id}", status_code=303)
 
 
 @app.get("/companies", response_class=HTMLResponse)

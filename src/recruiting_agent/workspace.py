@@ -237,7 +237,7 @@ class CandidateWorkspace:
         digest = hashlib.sha256()
         if not self.root.exists():
             return digest.hexdigest()[:16]
-        ignored = {"manifest.yaml", "onboarding.json"}
+        ignored = {"manifest.yaml", "onboarding.json", "search-journal.md", "current-search-state.md"}
         for path in sorted(p for p in self.root.rglob("*") if p.is_file()):
             if path.name in ignored or "uploads" in path.parts:
                 continue

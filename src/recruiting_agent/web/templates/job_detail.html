@@ -16,6 +16,20 @@
   <p class="muted">Seniority: {{ match.seniority_fit }}<br>Location: {{ match.location_fit }}</p>
   <footer class="muted">{{ match.model }} · {{ match.created_at.strftime("%Y-%m-%d %H:%M") }}</footer>
 </article>
+<details>
+  <summary>This recommendation is wrong</summary>
+  <form method="post" action="/jobs/{{ job.id }}/feedback">
+    <label>My judgment
+      <select name="label">
+        <option value="excited">This should be ranked higher</option>
+        <option value="consider">This is only a maybe</option>
+        <option value="pass">This should be a pass</option>
+      </select>
+    </label>
+    <label>Why?<textarea name="reason" rows="3" required></textarea></label>
+    <button type="submit">Record correction</button>
+  </form>
+</details>
 {% elif prefilter %}
 <article>
   <header>Prefilter: <strong>{{ prefilter.verdict }}</strong></header>
