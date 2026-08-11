@@ -86,8 +86,8 @@ class CandidateWorkspace:
         if len(content) > 10 * 1024 * 1024:
             raise ValueError("Resume must be 10 MB or smaller")
         suffix = Path(filename or "resume.pdf").suffix.lower()
-        if suffix not in {".pdf", ".docx", ".txt", ".md"}:
-            raise ValueError("Resume must be PDF, DOCX, TXT, or Markdown")
+        if suffix not in {".pdf", ".txt", ".md"}:
+            raise ValueError("Resume must be PDF, TXT, or Markdown")
         uploads = self.root / "uploads"
         uploads.mkdir(parents=True, exist_ok=True)
         target = uploads / f"resume{suffix}"

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 import yaml
 
 from recruiting_agent.workspace import CandidateWorkspace, OnboardingStage
@@ -19,6 +20,13 @@ def test_resume_upload_is_stored_without_parsing(tmp_path: Path):
 
     assert resume.read_bytes() == b"%PDF opaque resume bytes"
     assert ws.load_state()["stage"] == OnboardingStage.interview.value
+
+
+def test_resume_upload_rejects_formats_the_agent_cannot_read(tmp_path: Path):
+    ws = CandidateWorkspace(tmp_path)
+
+    with pytest.raises(ValueError, match="PDF, TXT, or Markdown"):
+        ws.store_resume("candidate.docx", b"opaque archive")
 
 
 def test_onboarding_resumes_and_compiles_versioned_harness(tmp_path: Path):
