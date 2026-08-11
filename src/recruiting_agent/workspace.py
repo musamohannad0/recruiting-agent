@@ -225,6 +225,19 @@ class CandidateWorkspace:
             raise ValueError("Context path escapes candidate workspace")
         return path.read_text() if path.exists() else ""
 
+    def apply_approved_revision(self, section: str, content: str) -> str:
+        if not (section.startswith("memory/") or section.startswith("policy/")):
+            raise ValueError("Approved revisions must target memory/ or policy/")
+        if not section.endswith(".md"):
+            raise ValueError("Approved revisions must target Markdown files")
+        self._write(section, content)
+        manifest = yaml.safe_load(self.manifest_path.read_text()) or {}
+        manifest["version"] = int(manifest.get("version", 0)) + 1
+        manifest["harness_hash"] = self.compute_hash()
+        manifest["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._write("manifest.yaml", yaml.safe_dump(manifest, sort_keys=False))
+        return manifest["harness_hash"]
+
     def load_context(self, sections: tuple[str, ...] | list[str]) -> str:
         chunks = []
         for section in sections:

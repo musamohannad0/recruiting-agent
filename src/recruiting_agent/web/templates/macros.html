@@ -14,6 +14,7 @@
         <p>{{ match.reasoning }}</p>
         {% if red_flags %}<p><strong>Red flags:</strong></p><ul>{% for f in red_flags %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
         <p class="muted">{{ match.location_fit }}</p>
+        <p class="muted">Harness {{ match.profile_hash }} · prompt {{ match.prompt_version }}</p>
       </div>
     </details>
   </td>

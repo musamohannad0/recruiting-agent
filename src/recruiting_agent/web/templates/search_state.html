@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Search State</h2>
+<p class="muted">Active harness: {{ harness_hash }}</p>
+{% for title, content in sections.items() %}
+<article><header><strong>{{ title }}</strong></header><pre class="desc">{{ content }}</pre></article>
+{% endfor %}
+{% endblock %}

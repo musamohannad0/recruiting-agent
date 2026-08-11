@@ -13,10 +13,15 @@ from ..db import get_session, get_setting, init_db, set_setting
 from ..models import (
     Company,
     CompanyStatus,
+    AgentAction,
+    AgentCycle,
+    AgentEvent,
     Feedback,
     Job,
     JobReview,
+    JobSource,
     Match,
+    MemoryRevision,
     Prefilter,
     PrefilterVerdict,
     Run,
@@ -338,6 +343,91 @@ def runs(request: Request):
         rows = s.exec(select(Run).order_by(Run.started_at.desc()).limit(100)).all()
         run_rows = [(r, json.loads(r.stats_json or "{}")) for r in rows]
     return render(request, "runs.html", active_page="runs", runs=run_rows)
+
+
+@app.get("/activity", response_class=HTMLResponse)
+def activity(request: Request):
+    with get_session() as s:
+        cycles = s.exec(select(AgentCycle).order_by(AgentCycle.started_at.desc()).limit(50)).all()
+        actions = s.exec(select(AgentAction).order_by(AgentAction.created_at.desc()).limit(100)).all()
+        events = s.exec(select(AgentEvent).order_by(AgentEvent.created_at.desc()).limit(100)).all()
+    return render(
+        request,
+        "activity.html",
+        active_page="activity",
+        cycles=cycles,
+        actions=actions,
+        events=events,
+    )
+
+
+@app.get("/search-state", response_class=HTMLResponse)
+def search_state(request: Request):
+    sections = {
+        "Search constitution": workspace.read_section("policy/search-constitution.md"),
+        "Company thesis": workspace.read_section("policy/company-thesis.md"),
+        "Current search state": workspace.read_section("memory/current-search-state.md"),
+    }
+    return render(
+        request,
+        "search_state.html",
+        active_page="search_state",
+        sections=sections,
+        harness_hash=workspace.harness_hash,
+    )
+
+
+@app.get("/memory", response_class=HTMLResponse)
+def memory(request: Request):
+    with get_session() as s:
+        revisions = s.exec(select(MemoryRevision).order_by(MemoryRevision.created_at.desc())).all()
+    return render(request, "memory.html", active_page="memory", revisions=revisions)
+
+
+@app.post("/memory/{revision_id}/decision")
+def memory_decision(revision_id: int, decision: str = Form(...)):
+    if decision not in {"approve", "reject"}:
+        return RedirectResponse("/memory", status_code=303)
+    with get_session() as s:
+        revision = s.get(MemoryRevision, revision_id)
+        if revision and revision.status == "proposed":
+            if decision == "approve":
+                workspace.apply_approved_revision(revision.section, revision.content)
+                revision.status = "approved"
+            else:
+                revision.status = "rejected"
+            revision.decided_at = utcnow()
+            s.add(revision)
+            s.commit()
+    return RedirectResponse("/memory", status_code=303)
+
+
+@app.get("/feedback", response_class=HTMLResponse)
+def feedback(request: Request):
+    with get_session() as s:
+        rows = s.exec(
+            select(Feedback, Job, Company)
+            .join(Job, Feedback.job_id == Job.id)
+            .join(Company, Job.company_id == Company.id)
+            .order_by(Feedback.created_at.desc())
+        ).all()
+    return render(request, "feedback.html", active_page="feedback", rows=rows)
+
+
+@app.get("/sources", response_class=HTMLResponse)
+def sources(request: Request):
+    with get_session() as s:
+        companies = s.exec(select(Company).order_by(Company.name)).all()
+        by_company: dict[int, list[JobSource]] = {}
+        for source in s.exec(select(JobSource)).all():
+            by_company.setdefault(source.company_id, []).append(source)
+    return render(
+        request,
+        "sources.html",
+        active_page="sources",
+        companies=companies,
+        by_company=by_company,
+    )
 
 
 @app.get("/settings", response_class=HTMLResponse)

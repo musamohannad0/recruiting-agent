@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Memory Revisions</h2>
+<p class="muted">Agents can propose changes, but policy and durable memory require your approval.</p>
+{% for revision in revisions %}
+<article>
+  <header><strong>{{ revision.section }}</strong> · {{ revision.status }}</header>
+  <pre class="desc">{{ revision.content }}</pre>
+  {% if revision.status == 'proposed' %}
+  <form method="post" action="/memory/{{ revision.id }}/decision" style="display:inline">
+    <button name="decision" value="approve" style="width:auto;display:inline-block">Approve</button>
+    <button name="decision" value="reject" class="secondary" style="width:auto;display:inline-block">Reject</button>
+  </form>
+  {% endif %}
+</article>
+{% else %}<p class="muted">No proposed memory changes.</p>{% endfor %}
+{% endblock %}

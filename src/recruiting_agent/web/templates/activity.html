@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Agent Activity</h2>
+<h3>Cycles</h3>
+<table><thead><tr><th>Started</th><th>Trigger</th><th>Status</th><th>Phase</th><th>Harness</th></tr></thead><tbody>
+{% for cycle in cycles %}<tr><td>{{ cycle.started_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ cycle.trigger }}</td><td>{{ cycle.status }}</td><td>{{ cycle.phase }}</td><td class="muted">{{ cycle.harness_hash }}</td></tr>{% endfor %}
+</tbody></table>
+<h3>Recent actions</h3>
+<table><thead><tr><th>Action</th><th>Status</th><th>Attempts</th><th>Finished</th></tr></thead><tbody>
+{% for action in actions %}<tr><td>{{ action.kind }}</td><td>{{ action.status }}</td><td>{{ action.attempts }}</td><td class="muted">{{ action.finished_at or '—' }}</td></tr>{% endfor %}
+</tbody></table>
+<h3>Event history</h3>
+{% for event in events %}<details><summary>Event {{ event.id }} · {{ event.event_type }}</summary><pre>{{ event.payload_json }}</pre></details>{% endfor %}
+{% endblock %}
