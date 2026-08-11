@@ -1,60 +1,13 @@
-# Structured profile used by the matching agents alongside resume.md.
+# Synthetic fallback used only before a private workspace is created.
 candidate:
-  name: Celena Gong
-  email: celenagong99@gmail.com
-  location: New York, NY
-  linkedin: linkedin.com/in/celena-gong
-  years_experience: 5
+  name: Example Candidate
 
 target_roles:
-  # Role families the agent should hunt for, roughly in priority order.
-  - Business Operations / BizOps
-  - Strategy & Operations
-  - Product Operations
-  - Data Operations (SQL/Python-heavy analytics ops)
-  - Pricing & Monetization Strategy
-  - Chief of Staff (business-side)
-  - GTM Strategy & Operations
-  - Strategic Finance / Revenue Strategy
-
-seniority:
-  # ~5 years total: 3y BCG consulting + 2y MongoDB BizOps.
-  # Do NOT anchor heavily on years-of-experience. A stretch role is fine and
-  # often desirable — prioritize how exciting/high-impact the role is. Only
-  # treat seniority as disqualifying when it's egregious (hard 8-10+ year
-  # requirements, VP/C-level scope) or clearly junior (intern/new-grad).
-  target_levels: [Senior Analyst, Associate, Senior Associate, Manager, Lead]
-  avoid: [VP, Director-with-10y-requirement, C-level, Intern, New Grad]
-
-strengths:
-  - Pricing strategy and monetization for consumption-based/usage-based products ($1B+ revenue base at MongoDB)
-  - Financial modeling in SQL and Python (pandas, NumPy) on customer/SKU/usage-level data
-  - 0-to-1 internal tooling (deal-pricing tool for margin self-serve)
-  - Strategy consulting toolkit: market analysis, GTM strategy, executive communication (3y BCG)
-  - Working effectively with engineering teams; technical fluency in database/infra products
+  - Product Management
 
 preferences:
-  # STRONG constraint: New York or San Francisco (Bay Area). US-remote is
-  # acceptable. Roles based outside the US — London, Singapore, EMEA, APAC,
-  # etc. — are NOT of interest and should be rejected, unless the posting
-  # explicitly offers a NYC/SF or US-remote option.
-  locations: [New York, San Francisco (Bay Area), Remote (US)]
-  exclude_locations: [London, Singapore, EMEA, APAC, Dublin, Tokyo, non-US]
-  notes: >
-    Frontier AI labs and high-growth AI startups strongly preferred — optimize
-    for the coolest, highest-impact roles, not the safest fit. Interesting
-    adjacent titles (e.g. Chief of Staff, Strategic Projects, Revenue Strategy,
-    Monetization) are worth surfacing even if the title doesn't literally match
-    the target list — judge on substance.
+  locations: [Remote (US)]
+  notes: This example must not be used as an activated candidate profile.
 
 hard_filters:
-  # The prefilter may reject these outright.
-  exclude_role_types:
-    - Pure software/ML engineering (IC coding roles)
-    - Research scientist
-    - Recruiting/talent/HR
-    - Legal/compliance
-    - Sales quota-carrying (AE/SDR)
-    - Internships / new-grad programs
-    - Hardware/mechanical/electrical engineering
-    - Facilities, workplace, executive assistant
+  exclude_role_types: []

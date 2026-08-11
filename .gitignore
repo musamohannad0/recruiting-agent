@@ -3,6 +3,7 @@
 
 # Data (DB, artifacts, browser profile)
 data/
+workspace/
 
 # Python
 __pycache__/

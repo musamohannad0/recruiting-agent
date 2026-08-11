@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     data_dir: Path = PROJECT_ROOT / "data"
     config_dir: Path = PROJECT_ROOT / "config"
     profile_dir: Path = PROJECT_ROOT / "profile"
+    workspace_dir: Path = PROJECT_ROOT / "workspace"
+    database_url: str = ""
 
     # LLM models
     prefilter_model: str = "claude-haiku-4-5"
@@ -32,6 +34,10 @@ class Settings(BaseSettings):
     @property
     def db_path(self) -> Path:
         return self.data_dir / "app.db"
+
+    @property
+    def effective_database_url(self) -> str:
+        return self.database_url or f"sqlite:///{self.db_path}"
 
     @property
     def companies_yaml(self) -> Path:
