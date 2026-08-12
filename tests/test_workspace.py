@@ -90,7 +90,35 @@ def test_default_company_universe_starts_with_40_included_companies(tmp_path: Pa
 
     assert len(state["company_candidates"]) == 40
     assert all(company["included"] for company in state["company_candidates"])
-    assert len([company for company in state["company_candidates"] if company["priority"]]) == 8
+    priorities = [company for company in state["company_candidates"] if company["priority"]]
+    assert len(priorities) == 8
+    assert {company["category"] for company in priorities} >= {"Applied AI", "Foundation models"}
+
+
+def test_fallback_interview_does_not_repeat_structured_brief_topics(tmp_path: Path):
+    ws = CandidateWorkspace(tmp_path)
+    ws.store_resume("resume.pdf", b"resume")
+    state = ws.save_search_brief(
+        {
+            "role_thesis": "Applied AI deployment work",
+            "locations": ["New York City"],
+            "weekly_cadence": "8",
+        }
+    )
+
+    questions = []
+    while state["stage"] == OnboardingStage.interview.value:
+        question = ws.next_fallback_question(state)
+        if not question:
+            state = ws.finish_interview(state)
+            break
+        questions.append(question)
+        topic = next(key for key, value in FOLLOW_UP_QUESTIONS.items() if value == question)
+        state = ws.record_answer(question, "Candidate answer", topic)
+
+    assert len(questions) == 2
+    assert all("location" not in question.casefold() for question in questions)
+    assert all("weekly" not in question.casefold() for question in questions)
 
 
 def test_legacy_questionnaire_migration_deduplicates_and_preserves_intent(tmp_path: Path):

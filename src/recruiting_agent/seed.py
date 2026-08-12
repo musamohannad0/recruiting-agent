@@ -13,6 +13,10 @@ def load_company_config() -> list[dict]:
         candidate_config = workspace.root / "policy" / "companies.yaml"
         data = yaml.safe_load(candidate_config.read_text()) or {}
         catalog: dict[str, dict] = {}
+        if settings.companies_yaml.exists():
+            base_data = yaml.safe_load(settings.companies_yaml.read_text()) or {}
+            for entry in base_data.get("companies", []):
+                catalog[entry["name"].casefold()] = entry
         presets_dir = settings.config_dir / "presets"
         if presets_dir.exists():
             for preset in presets_dir.glob("*.yaml"):

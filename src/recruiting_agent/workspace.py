@@ -102,6 +102,15 @@ class CandidateWorkspace:
         if int(state.get("schema_version", 1)) < ONBOARDING_SCHEMA_VERSION:
             state = self._migrate_legacy_state(state)
             self.save_state(state)
+        if (
+            state.get("stage") == OnboardingStage.company_calibration.value
+            and int(state.get("company_catalog_version", 1)) < 2
+        ):
+            state["company_candidates"] = self._build_company_candidates(
+                state.get("search_draft", {})
+            )
+            state["company_catalog_version"] = 2
+            self.save_state(state)
         return state
 
     @staticmethod
@@ -245,7 +254,7 @@ class CandidateWorkspace:
 
     def next_fallback_question(self, state: dict[str, Any] | None = None) -> str | None:
         state = state or self.load_state()
-        asked = set(state.get("asked_topics", []))
+        asked = set(state.get("asked_topics", [])) | set(state.get("covered_topics", []))
         for topic, question in FOLLOW_UP_QUESTIONS.items():
             if topic not in asked:
                 return question
@@ -317,6 +326,7 @@ class CandidateWorkspace:
         state = state or self.load_state()
         if not state.get("company_candidates"):
             state["company_candidates"] = self._build_company_candidates(state.get("search_draft", {}))
+        state["company_catalog_version"] = 2
         state["stage"] = OnboardingStage.company_calibration.value
         state["current_question"] = None
         state["generation"] = {"status": "complete", "message": "Your initial company universe is ready."}
@@ -477,8 +487,19 @@ class CandidateWorkspace:
             for name, category, stage, rationale in DEFAULT_COMPANY_CATALOG
         ]
         rows.sort(key=lambda item: (-item["fit_score"], item["category"], item["name"]))
-        for item in rows[:8]:
-            item["priority"] = True
+        categories: dict[str, list[dict[str, Any]]] = {}
+        for item in rows:
+            categories.setdefault(item["category"], []).append(item)
+        ranked_categories = sorted(
+            categories.values(),
+            key=lambda group: (
+                -max(item["fit_score"] for item in group),
+                group[0]["category"],
+            ),
+        )
+        for group, quota in zip(ranked_categories, (4, 3, 1)):
+            for item in group[:quota]:
+                item["priority"] = True
         return rows
 
     @staticmethod
@@ -549,7 +570,10 @@ class CandidateWorkspace:
         roles = state.get("role_calibration", {})
 
         self._write("context/career-story.md", self._career_story(draft, answers))
-        self._write("policy/search-constitution.md", self._search_constitution(draft, companies, roles))
+        self._write(
+            "policy/search-constitution.md",
+            self._search_constitution(draft, companies, roles, answers),
+        )
         self._write("policy/decision-rubric.md", self._decision_rubric(roles, state.get("role_cards", [])))
         self._write("policy/company-thesis.md", self._company_thesis(companies))
         self._write("policy/companies.yaml", yaml.safe_dump(companies, sort_keys=False))
@@ -699,9 +723,13 @@ class CandidateWorkspace:
         )
 
     @staticmethod
-    def _search_constitution(draft: dict, companies: dict, roles: dict) -> str:
-        return "\n".join(
-            [
+    def _search_constitution(
+        draft: dict,
+        companies: dict,
+        roles: dict,
+        answers: list[dict[str, str]] | None = None,
+    ) -> str:
+        lines = [
             "# Search Constitution",
             "",
             "This is user-approved policy. Agent inferences may not silently override it.",
@@ -732,8 +760,16 @@ class CandidateWorkspace:
             "",
             "## Calibration",
             "Role-card labels in `memory/calibration-anchors.md` are approved examples. They refine this policy but cannot override hard constraints.",
-            ]
-        )
+        ]
+        clarifications = [
+            item for item in (answers or []) if item.get("topic") and item.get("answer")
+        ]
+        if clarifications:
+            lines.extend(["", "## Approved clarifications"])
+            for item in clarifications:
+                topic = str(item["topic"]).replace("_", " ").title()
+                lines.append(f"- **{topic}:** {item['answer']}")
+        return "\n".join(lines)
 
     @staticmethod
     def _decision_rubric(roles: dict, cards: list[dict] | None = None) -> str:
