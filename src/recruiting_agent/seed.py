@@ -3,7 +3,7 @@ from __future__ import annotations
 import yaml
 from sqlmodel import Session, select
 
-from .models import Company
+from .models import Company, CompanyStatus
 from .settings import settings
 from .workspace import workspace
 
@@ -50,5 +50,19 @@ def seed_companies(session: Session) -> tuple[int, int]:
             added += 1
         else:
             existing += 1
+    session.commit()
+    return added, existing
+
+
+def sync_candidate_companies(session: Session) -> tuple[int, int]:
+    """Activate the approved universe and pause unrelated legacy rows without deleting history."""
+    configured = load_company_config()
+    approved = {entry["name"].casefold() for entry in configured}
+    added, existing = seed_companies(session)
+    for company in session.exec(select(Company)).all():
+        company.status = (
+            CompanyStatus.active if company.name.casefold() in approved else CompanyStatus.paused
+        )
+        session.add(company)
     session.commit()
     return added, existing

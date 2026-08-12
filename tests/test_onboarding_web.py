@@ -17,7 +17,7 @@ def test_dashboard_redirects_to_first_run_onboarding(tmp_path: Path, monkeypatch
     assert response.headers["location"] == "/onboarding"
 
 
-def test_resume_upload_advances_to_agent_interview(tmp_path: Path, monkeypatch):
+def test_resume_upload_advances_to_search_brief(tmp_path: Path, monkeypatch):
     ws = CandidateWorkspace(tmp_path)
     monkeypatch.setattr(web_module, "workspace", ws)
     client = TestClient(web_module.app)
@@ -30,13 +30,14 @@ def test_resume_upload_advances_to_agent_interview(tmp_path: Path, monkeypatch):
 
     assert response.status_code == 303
     assert ws.resume_path().read_bytes() == b"opaque resume"
-    assert ws.load_state()["stage"] == "interview"
+    assert ws.load_state()["stage"] == "brief"
 
 
 def test_interview_page_resumes_current_agent_question(tmp_path: Path, monkeypatch):
     ws = CandidateWorkspace(tmp_path)
     ws.store_resume("resume.pdf", b"opaque")
     state = ws.load_state()
+    state["stage"] = "interview"
     state["current_question"] = "Which tradeoff matters most?"
     ws.save_state(state)
     monkeypatch.setattr(web_module, "workspace", ws)

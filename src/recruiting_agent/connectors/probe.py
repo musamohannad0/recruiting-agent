@@ -7,7 +7,7 @@ import typer
 from sqlmodel import select
 
 from ..db import get_session, init_db
-from ..models import AtsType, Company, JobSource
+from ..models import AtsType, Company, CompanyStatus, JobSource
 from ..seed import load_company_config, slug_candidates
 from .registry import CONNECTORS
 
@@ -31,7 +31,7 @@ async def probe_companies(name: str | None = None, force: bool = False) -> None:
     config_by_name = {entry["name"]: entry for entry in load_company_config()}
 
     with get_session() as session:
-        query = select(Company)
+        query = select(Company).where(Company.status == CompanyStatus.active)
         if name:
             query = query.where(Company.name == name)
         companies = session.exec(query).all()

@@ -37,6 +37,13 @@ async def _ingest() -> dict:
     return await run_ingest()
 
 
+async def _probe() -> dict:
+    from .connectors.probe import probe_companies
+
+    await probe_companies()
+    return {"status": "source probing complete"}
+
+
 async def _match() -> dict:
     from .pipeline.match import run_match
 
@@ -57,6 +64,7 @@ async def _scout_unsupported() -> dict:
 
 @dataclass
 class CoordinatorOperations:
+    probe: Operation = _probe
     ingest: Operation = _ingest
     match: Operation = _match
     discover: Operation = _discover
@@ -85,6 +93,7 @@ class SearchCoordinator:
             cadence = self._load_cadence()
             scope = self._company_scope()
             action_specs: list[tuple[str, str, Operation]] = [
+                ("probe", self._bucket(hours=int(cadence["career_site_discovery_hours"])), self.operations.probe),
                 ("ingest", self._bucket(hours=int(cadence["ats_ingest_hours"])), self.operations.ingest),
                 ("match", self._bucket(hours=int(cadence["ats_ingest_hours"])), self.operations.match),
                 ("scout", self._bucket(hours=int(cadence["career_site_discovery_hours"])), self.operations.scout),

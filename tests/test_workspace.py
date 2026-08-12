@@ -3,15 +3,26 @@ from pathlib import Path
 import pytest
 import yaml
 
-from recruiting_agent.workspace import CandidateWorkspace, OnboardingStage
+from recruiting_agent.workspace import FOLLOW_UP_QUESTIONS, CandidateWorkspace, OnboardingStage
 
 
 def complete_interview(ws: CandidateWorkspace) -> None:
     state = ws.load_state()
+    if state["stage"] == OnboardingStage.brief.value:
+        state = ws.save_search_brief(
+            {
+                "role_thesis": "Product-focused platform engineering",
+                "locations": ["New York City"],
+                "company_scope": "exploratory",
+            }
+        )
     while state["stage"] == OnboardingStage.interview.value:
         question = ws.next_fallback_question(state)
-        assert question
-        state = ws.record_answer(question, f"Answer {state['question_index'] + 1}")
+        if not question:
+            state = ws.finish_interview(state)
+            break
+        topic = next(key for key, value in FOLLOW_UP_QUESTIONS.items() if value == question)
+        state = ws.record_answer(question, f"Answer {state['question_index'] + 1}", topic)
 
 
 def test_resume_upload_is_stored_without_parsing(tmp_path: Path):
@@ -19,7 +30,7 @@ def test_resume_upload_is_stored_without_parsing(tmp_path: Path):
     resume = ws.store_resume("candidate.pdf", b"%PDF opaque resume bytes")
 
     assert resume.read_bytes() == b"%PDF opaque resume bytes"
-    assert ws.load_state()["stage"] == OnboardingStage.interview.value
+    assert ws.load_state()["stage"] == OnboardingStage.brief.value
 
 
 def test_resume_upload_rejects_formats_the_agent_cannot_read(tmp_path: Path):
@@ -32,8 +43,14 @@ def test_resume_upload_rejects_formats_the_agent_cannot_read(tmp_path: Path):
 def test_onboarding_resumes_and_compiles_versioned_harness(tmp_path: Path):
     ws = CandidateWorkspace(tmp_path)
     ws.store_resume("candidate.pdf", b"%PDF opaque resume bytes")
+    ws.save_search_brief(
+        {
+            "role_thesis": "I want product-focused platform work.",
+            "locations": ["New York City"],
+        }
+    )
     question = ws.next_fallback_question()
-    ws.record_answer(question, "I want product-focused platform work.")
+    ws.record_answer(question, "My launch work is the strongest evidence.", "strengths")
 
     resumed = CandidateWorkspace(tmp_path)
     assert resumed.load_state()["question_index"] == 1
@@ -57,6 +74,44 @@ def test_onboarding_resumes_and_compiles_versioned_harness(tmp_path: Path):
     companies = yaml.safe_load(resumed.read_section("policy/companies.yaml"))
     assert companies["excited"] == ["Google", "Microsoft"]
     assert (tmp_path / ".claude/skills/candidate-search-policy/SKILL.md").exists()
+
+
+def test_default_company_universe_starts_with_40_included_companies(tmp_path: Path):
+    ws = CandidateWorkspace(tmp_path)
+    ws.store_resume("resume.pdf", b"resume")
+    ws.save_search_brief(
+        {
+            "role_thesis": "Applied AI engineer with a customer feedback loop",
+            "locations": ["New York City", "San Francisco"],
+            "company_preferences": "Private LLM labs and applied AI companies",
+        }
+    )
+    state = ws.finish_interview()
+
+    assert len(state["company_candidates"]) == 40
+    assert all(company["included"] for company in state["company_candidates"])
+    assert len([company for company in state["company_candidates"] if company["priority"]]) == 8
+
+
+def test_legacy_questionnaire_migration_deduplicates_and_preserves_intent(tmp_path: Path):
+    ws = CandidateWorkspace(tmp_path)
+    ws.ensure()
+    (tmp_path / "uploads").mkdir()
+    (tmp_path / "uploads/resume.pdf").write_bytes(b"resume")
+    ws.state_path.write_text(
+        '{"stage":"ready","resume_path":"uploads/resume.pdf","answers":['
+        '{"question":"Target?","answer":"FDE and applied AI, not pure SWE"},'
+        '{"question":"Location?","answer":"NYC/SF only"},'
+        '{"question":"Location?","answer":"NYC/SF only"}]}'
+    )
+    ws.manifest_path.write_text("status: ready\nversion: 1\n")
+
+    state = ws.load_state()
+
+    assert state["stage"] == OnboardingStage.brief.value
+    assert state["search_draft"]["locations"] == ["New York City", "San Francisco Bay Area"]
+    assert len(state["answers"]) == 2
+    assert (tmp_path / "backups/onboarding-v1/onboarding.json").exists()
 
 
 def test_harness_hash_changes_when_approved_policy_changes(tmp_path: Path):

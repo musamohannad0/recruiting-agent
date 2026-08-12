@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Starting your search — Aster{% endblock %}
+{% block content %}
+<section data-boot-poll data-signature="">
+  <p class="eyebrow">First search</p>
+  <h2>Aster is building your map.</h2>
+  <p class="lede">Your policy is active. The first run verifies company sources, collects current openings, and evaluates them against your new harness.</p>
+  <article class="panel" style="max-width:760px">
+    <div style="display:flex;align-items:center;gap:1rem"><span class="agent-orb"><i></i></span><div><strong>{{ cycle.phase|replace('_',' ')|title if cycle else 'Queued' }}</strong><div class="muted">{{ 'Cycle ' ~ cycle.id if cycle else 'The coordinator is about to claim the first cycle.' }}</div></div></div>
+    <div class="progress-list">
+      {% set action_map = {} %}
+      {% for action in actions %}{% set _ = action_map.update({action.kind: action}) %}{% endfor %}
+      {% for kind, title, detail in [('probe','Verify company sources','Locate supported ATS boards and flag custom sites.'),('ingest','Collect current openings','Ingest live jobs from approved companies.'),('match','Evaluate relevance','Score current roles with your active harness.'),('scout','Scout unsupported sites','Prepare coverage for custom career pages.'),('consolidate_memory','Save the checkpoint','Record a durable summary for the next cycle.')] %}
+      {% set item = action_map.get(kind) %}
+      {% set status = item.status.value if item else ('running' if cycle and cycle.phase == kind else 'pending') %}
+      <div class="progress-row {{ status }}"><span class="progress-icon">{{ '✓' if status == 'success' else ('!' if status == 'failed' else loop.index) }}</span><div><strong>{{ title }}</strong><small>{{ detail }}</small></div><span class="pill {{ 'status-success' if status == 'success' else ('status-failed' if status == 'failed') }}">{{ status }}</span></div>
+      {% endfor %}
+    </div>
+    {% if cycle and cycle.error %}<div class="notice" style="background:var(--red-soft);color:var(--red)">The first run stopped: {{ cycle.error[:240] }}</div>{% endif %}
+    <div class="form-actions" style="margin-top:1.2rem"><span class="muted">{{ jobs_count }} roles collected so far</span><a class="button primary" href="/">Open Today</a></div>
+  </article>
+</section>
+{% endblock %}

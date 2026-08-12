@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlmodel import func, select
 
@@ -30,6 +32,7 @@ from ..models import (
 from ..workspace import OnboardingStage, workspace
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
+STATIC_DIR = Path(__file__).parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
@@ -40,11 +43,13 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Recruiting Agent", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.middleware("http")
 async def require_onboarding(request: Request, call_next):
-    if not workspace.is_ready and not request.url.path.startswith("/onboarding"):
+    public_path = request.url.path.startswith(("/onboarding", "/static"))
+    if not workspace.is_ready and not public_path:
         return RedirectResponse("/onboarding", status_code=303)
     return await call_next(request)
 
@@ -54,15 +59,25 @@ def render(request: Request, template: str, **ctx) -> HTMLResponse:
 
 
 @app.get("/onboarding", response_class=HTMLResponse)
-async def onboarding(request: Request):
+async def onboarding(request: Request, background_tasks: BackgroundTasks):
     if workspace.is_ready:
         return RedirectResponse("/", status_code=303)
     state = workspace.load_state()
     question = state.get("current_question")
-    if state["stage"] == OnboardingStage.interview.value and not question:
-        from ..agents.interview import OnboardingInterviewer
-
-        question = await OnboardingInterviewer(workspace).next_question()
+    generation = state.get("generation", {})
+    started_at = generation.get("started_at")
+    stale = False
+    if started_at:
+        try:
+            stale = datetime.fromisoformat(started_at) < datetime.now(timezone.utc) - timedelta(seconds=60)
+        except ValueError:
+            stale = True
+    if (
+        state["stage"] == OnboardingStage.interview.value
+        and not question
+        and (generation.get("status") in {"pending", "failed", "idle"} or stale)
+    ):
+        _queue_interview(background_tasks)
         state = workspace.load_state()
     return render(
         request,
@@ -75,15 +90,101 @@ async def onboarding(request: Request):
     )
 
 
+async def _prepare_interview_question() -> None:
+    from ..agents.interview import OnboardingInterviewer
+
+    try:
+        await OnboardingInterviewer(workspace).next_question()
+    except Exception as exc:
+        state = workspace.load_state()
+        state["generation"] = {
+            "status": "failed",
+            "message": f"The agent could not prepare the next question: {str(exc)[:180]}",
+        }
+        workspace.save_state(state)
+
+
+def _queue_interview(background_tasks: BackgroundTasks) -> None:
+    state = workspace.load_state()
+    state["generation"] = {
+        "status": "running",
+        "message": state.get("generation", {}).get("message") or "Checking for a high-value clarification…",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    }
+    workspace.save_state(state)
+    background_tasks.add_task(_prepare_interview_question)
+
+
+@app.get("/onboarding/status")
+def onboarding_status():
+    state = workspace.load_state()
+    return JSONResponse(
+        {
+            "stage": state.get("stage"),
+            "generation": state.get("generation", {}),
+            "has_question": bool(state.get("current_question")),
+        }
+    )
+
+
 @app.post("/onboarding/resume")
 async def onboarding_resume(resume: UploadFile = File(...)):
     workspace.store_resume(resume.filename or "resume.pdf", await resume.read())
     return RedirectResponse("/onboarding", status_code=303)
 
 
+@app.post("/onboarding/brief")
+def onboarding_brief(
+    background_tasks: BackgroundTasks,
+    role_thesis: str = Form(...),
+    work_style: str = Form(""),
+    locations: str = Form(...),
+    remote_policy: str = Form("onsite_or_hybrid"),
+    company_stages: str = Form(""),
+    company_preferences: str = Form(""),
+    verticals: str = Form(""),
+    excluded_verticals: str = Form(""),
+    stretch: str = Form("balanced"),
+    hard_exclusions: str = Form(""),
+    weekly_cadence: str = Form("10"),
+    company_scope: str = Form("exploratory"),
+):
+    workspace.save_search_brief(
+        {
+            "role_thesis": role_thesis,
+            "work_style": work_style,
+            "locations": _csv(locations),
+            "remote_policy": remote_policy,
+            "company_stages": _csv(company_stages),
+            "company_preferences": company_preferences,
+            "verticals": _csv(verticals),
+            "excluded_verticals": _csv(excluded_verticals),
+            "stretch": stretch,
+            "hard_exclusions": hard_exclusions,
+            "weekly_cadence": weekly_cadence,
+            "company_scope": company_scope,
+        }
+    )
+    _queue_interview(background_tasks)
+    return RedirectResponse("/onboarding", status_code=303)
+
+
 @app.post("/onboarding/interview")
-def onboarding_interview(question: str = Form(...), answer: str = Form(...)):
-    workspace.record_answer(question, answer)
+def onboarding_interview(
+    background_tasks: BackgroundTasks,
+    question: str = Form(...),
+    topic: str = Form("clarification"),
+    answer: str = Form(...),
+):
+    state = workspace.record_answer(question, answer, topic)
+    if state.get("stage") == OnboardingStage.interview.value:
+        _queue_interview(background_tasks)
+    return RedirectResponse("/onboarding", status_code=303)
+
+
+@app.post("/onboarding/interview/finish")
+def onboarding_interview_finish():
+    workspace.finish_interview()
     return RedirectResponse("/onboarding", status_code=303)
 
 
@@ -94,41 +195,82 @@ def _csv(value: str) -> list[str]:
 @app.post("/onboarding/companies")
 def onboarding_companies(
     scope: str = Form(...),
-    excited: str = Form(""),
-    acceptable: str = Form(""),
-    excluded: str = Form(""),
+    included: list[str] = Form([]),
+    priority: list[str] = Form([]),
+    additions: str = Form(""),
 ):
-    workspace.save_company_calibration(
+    workspace.save_company_selection(
         scope=scope,
-        excited=_csv(excited),
-        acceptable=_csv(acceptable),
-        excluded=_csv(excluded),
+        included=included,
+        priority=priority,
+        additions=_csv(additions),
     )
     return RedirectResponse("/onboarding", status_code=303)
 
 
 @app.post("/onboarding/roles")
-def onboarding_roles(
-    target_roles: str = Form(...),
-    excited_examples: str = Form(""),
-    pass_examples: str = Form(""),
-):
-    workspace.save_role_calibration(
-        target_roles=_csv(target_roles),
-        excited_examples=excited_examples,
-        pass_examples=pass_examples,
-    )
+async def onboarding_roles(request: Request):
+    form = await request.form()
+    ratings = {key.removeprefix("rating_"): str(value) for key, value in form.items() if key.startswith("rating_")}
+    notes = {key.removeprefix("note_"): str(value) for key, value in form.items() if key.startswith("note_")}
+    workspace.save_role_ratings(ratings, notes)
     return RedirectResponse("/onboarding", status_code=303)
 
 
+async def _run_initial_cycle() -> None:
+    from ..coordinator import SearchCoordinator
+
+    await SearchCoordinator(candidate_workspace=workspace).run_cycle("onboarding_activation")
+
+
 @app.post("/onboarding/activate")
-def onboarding_activate():
+def onboarding_activate(background_tasks: BackgroundTasks):
     workspace.activate()
-    from ..seed import seed_companies
+    from ..seed import sync_candidate_companies
 
     with get_session() as session:
-        seed_companies(session)
-    return RedirectResponse("/", status_code=303)
+        sync_candidate_companies(session)
+    background_tasks.add_task(_run_initial_cycle)
+    return RedirectResponse("/getting-started", status_code=303)
+
+
+@app.get("/getting-started", response_class=HTMLResponse)
+def getting_started(request: Request):
+    with get_session() as session:
+        cycle = session.exec(select(AgentCycle).order_by(AgentCycle.started_at.desc())).first()
+        actions = (
+            session.exec(select(AgentAction).where(AgentAction.cycle_id == cycle.id).order_by(AgentAction.id)).all()
+            if cycle
+            else []
+        )
+        jobs_count = session.exec(select(func.count()).select_from(Job)).one()
+    return render(
+        request,
+        "getting_started.html",
+        active_page="overview",
+        cycle=cycle,
+        actions=actions,
+        jobs_count=jobs_count,
+    )
+
+
+@app.get("/getting-started/status")
+def getting_started_status():
+    with get_session() as session:
+        cycle = session.exec(select(AgentCycle).order_by(AgentCycle.started_at.desc())).first()
+        actions = (
+            session.exec(select(AgentAction).where(AgentAction.cycle_id == cycle.id).order_by(AgentAction.id)).all()
+            if cycle
+            else []
+        )
+        jobs_count = session.exec(select(func.count()).select_from(Job)).one()
+    return JSONResponse(
+        {
+            "cycle": {"status": cycle.status.value, "phase": cycle.phase, "error": cycle.error} if cycle else None,
+            "actions": [{"kind": item.kind, "status": item.status.value, "error": item.error} for item in actions],
+            "jobs": jobs_count,
+        }
+    )
 
 
 @app.get("/", response_class=HTMLResponse)

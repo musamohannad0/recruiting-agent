@@ -52,6 +52,7 @@ def fake_operations(calls: list[str]) -> CoordinatorOperations:
         return run
 
     return CoordinatorOperations(
+        probe=operation("probe"),
         ingest=operation("ingest"),
         match=operation("match"),
         discover=operation("discover"),
@@ -76,7 +77,7 @@ async def test_cycle_is_idempotent_within_cadence_bucket(tmp_path, session_facto
 
     assert first["status"] == "success"
     assert second["status"] == "success"
-    assert calls == ["ingest", "match", "scout", "memory"]
+    assert calls == ["probe", "ingest", "match", "scout", "memory"]
     with session_factory() as session:
         assert len(session.exec(select(AgentCycle)).all()) == 2
         assert all(action.attempts == 1 for action in session.exec(select(AgentAction)).all())
