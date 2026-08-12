@@ -195,7 +195,7 @@ details summary { color: var(--ink-soft); font-weight: 600; cursor: pointer; }
 .company-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
 .company-card { position: relative; display: block; min-height: 132px; margin: 0; padding: .9rem; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: var(--surface); }
 .company-card:nth-child(2n) { border-right: 0; }
-.company-card:nth-last-child(-n+2) { border-bottom: 0; }
+.company-card:last-child, .company-card:nth-last-child(2):nth-child(odd) { border-bottom: 0; }
 .company-card:hover { background: #fafaf8; }
 .company-card.is-removed { background: #f0f0ee; opacity: .55; }
 .company-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: .65rem; }
@@ -269,7 +269,7 @@ details summary { color: var(--ink-soft); font-weight: 600; cursor: pointer; }
   .mobile-nav a.active { background: #ececea; color: var(--ink); }
   .form-row, .company-grid, .review-grid, .scope-choice { grid-template-columns: 1fr; }
   .company-card { border-right: 0; }
-  .company-card:nth-last-child(-n+2) { border-bottom: 1px solid var(--line); }
+  .company-card:nth-last-child(2):nth-child(odd) { border-bottom: 1px solid var(--line); }
   .company-card:last-child { border-bottom: 0; }
   .review-section.full { grid-column: auto; }
   .role-card { grid-template-columns: 1fr; }
