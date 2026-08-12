@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Meet your search agent — Aster{% endblock %}
+{% block title %}Set up your search — Recruiting Agent{% endblock %}
 {% block body_class %}onboarding-body{% endblock %}
 {% set steps = ['resume', 'brief', 'interview', 'company_calibration', 'role_calibration', 'review'] %}
 {% set step_names = ['Resume', 'Search brief', 'Clarify', 'Companies', 'Role judgment', 'Activate'] %}
@@ -8,11 +8,10 @@
 {% block layout %}
 <div class="onboarding-shell">
   <aside class="onboarding-aside">
-    <a href="/onboarding" class="brand"><span class="agent-orb agent-orb--small"><i></i></span><span>Aster</span></a>
+    <a href="/onboarding" class="brand"><span>Recruiting Agent</span><small>candidate-owned</small></a>
     <div class="onboarding-promise">
-      <span class="agent-orb"><i></i></span>
-      <h1>A search that learns you.</h1>
-      <p>Your agent will build a living model of what good looks like, search continuously, and explain every recommendation.</p>
+      <h1>Set the search policy.</h1>
+      <p>Your answers determine what the agent searches, how it ranks roles, and when it asks for a decision.</p>
       <div class="step-list" aria-label="Onboarding progress">
         {% for name in step_names %}
         <div class="step-item {{ 'done' if loop.index0 < current_step else ('current' if loop.index0 == current_step) }}">
@@ -21,7 +20,7 @@
         {% endfor %}
       </div>
     </div>
-    <div class="privacy-note"><span>◉</span><span>Your resume, preferences, and agent memory stay inside this deployment.</span></div>
+    <div class="privacy-note"><strong>Local workspace</strong><span>Your resume, preferences, and agent memory stay inside this deployment.</span></div>
   </aside>
 
   <main class="onboarding-main">
@@ -30,12 +29,12 @@
 
       {% if stage == "resume" %}
       <p class="eyebrow">01 · Evidence</p>
-      <h2>Give your agent context.</h2>
-      <p class="intro">Upload the resume you already use. Aster reads it as evidence of what you can do—not as a guess about what you want next.</p>
+      <h2>Add background evidence.</h2>
+      <p class="intro">Upload the resume you already use. The agent uses it as supporting evidence, while your answers remain the source of truth for what comes next.</p>
       <form class="form-card form-stack" method="post" action="/onboarding/resume" enctype="multipart/form-data" data-pending data-pending-label="Uploading" data-pending-message="Resume received — saving it privately.">
         <label class="upload-zone">
           <input type="file" name="resume" accept=".pdf,.txt,.md" required>
-          <span class="agent-orb agent-orb--small"><i></i></span>
+          <span class="upload-file-type">PDF / TXT / MD</span>
           <strong data-upload-name>Choose your resume</strong>
           <small>PDF, text, or Markdown · up to 10 MB</small>
         </label>
@@ -45,8 +44,8 @@
       {% elif stage == "brief" %}
       <p class="eyebrow">02 · Intent</p>
       <h2>Describe the search once, clearly.</h2>
-      <p class="intro">This is the source of truth. Aster will only ask follow-ups when an answer could actually change the search.</p>
-      <form class="form-card form-stack" method="post" action="/onboarding/brief" data-pending data-pending-label="Building your brief" data-pending-message="Brief received — Aster is checking for important gaps.">
+      <p class="intro">This is the source of truth. The agent will only ask a follow-up when the answer could materially change the search.</p>
+      <form class="form-card form-stack" method="post" action="/onboarding/brief" data-pending data-pending-label="Checking your brief" data-pending-message="Brief received — checking for important gaps.">
         <label>What work do you want to do?
           <small>Describe responsibilities and working style, not just titles. For example: “FDE or applied AI engineering with a customer feedback loop; technical PM at a small team is possible; pure SWE is not.”</small>
           <textarea name="role_thesis" rows="4" required>{{ draft.get('role_thesis', '') }}</textarea>
@@ -80,7 +79,7 @@
           </label>
         </div>
         <label>What makes a company exciting?
-          <small>Mission, technical ambition, stage, people, pace, market, or something else. Aster uses this to rank the initial company universe.</small>
+          <small>Mission, technical ambition, stage, people, pace, market, or something else. This ranks the initial company universe.</small>
           <textarea name="company_preferences" rows="3">{{ draft.get('company_preferences', '') }}</textarea>
         </label>
         <div class="form-row">
@@ -103,7 +102,7 @@
         </label>
         <div class="form-row">
           <label>Strong opportunities per week
-            <small>Aster optimizes for this review budget.</small>
+            <small>The search is calibrated to this review budget.</small>
             <input name="weekly_cadence" type="number" min="1" max="50" value="{{ draft.get('weekly_cadence', '10') }}">
           </label>
           <label>Discovery boundary
@@ -114,7 +113,7 @@
             </select>
           </label>
         </div>
-        <div class="form-actions"><button class="primary" type="submit" data-pending-label="Building your brief">Let Aster calibrate</button></div>
+        <div class="form-actions"><button class="primary" type="submit" data-pending-label="Checking your brief">Check for gaps</button></div>
       </form>
 
       {% elif stage == "interview" %}
@@ -127,8 +126,8 @@
         <div class="question-card">
           <span class="pill">{{ question_topic|replace('_', ' ') }}</span>
           <h3>{{ question_text }}</h3>
-          {% if question is mapping and question.reason %}<p class="question-reason">Why Aster is asking: {{ question.reason }}</p>{% endif %}
-          <form class="form-stack" method="post" action="/onboarding/interview" data-pending data-pending-label="Answer received" data-pending-message="Answer received — Aster is updating your search brief.">
+          {% if question is mapping and question.reason %}<p class="question-reason"><strong>Why this matters:</strong> {{ question.reason }}</p>{% endif %}
+          <form class="form-stack" method="post" action="/onboarding/interview" data-pending data-pending-label="Saving answer" data-pending-message="Answer received — updating the search brief.">
             <input type="hidden" name="question" value="{{ question_text }}">
             <input type="hidden" name="topic" value="{{ question_topic }}">
             <textarea name="answer" rows="4" required autofocus placeholder="Your answer…"></textarea>
@@ -141,16 +140,15 @@
         </div>
       {% else %}
         <div class="form-card thinking" data-onboarding-poll data-stage="{{ stage }}">
-          <span class="agent-orb"><i></i></span>
-          <div><h3>Aster is reading the signal.</h3><p>{{ state.get('generation', {}).get('message') or 'Checking whether any clarification would materially change the search.' }}</p></div>
-          <span class="inline-status"><span class="spinner" style="color:var(--accent)"></span>This usually takes a few seconds</span>
+          <div><span class="pill">Brief analysis</span><h3>Checking for material gaps</h3><p>{{ state.get('generation', {}).get('message') or 'Checking whether any clarification would materially change the search.' }}</p></div>
+          <span class="inline-status"><span class="spinner" style="color:var(--blue)"></span>This usually takes a few seconds</span>
         </div>
       {% endif %}
 
       {% elif stage == "company_calibration" %}
       <p class="eyebrow">04 · Company universe</p>
       <h2>Start broad. Cut what’s wrong.</h2>
-      <p class="intro">Aster ranked a 40-company starting set from your brief. Everything is included initially—remove misses, star priorities, or add anything absent.</p>
+      <p class="intro">The initial 40-company set is ranked from your brief. Everything starts included—remove misses, mark priorities, or add anything absent.</p>
       <form method="post" action="/onboarding/companies" data-pending data-pending-label="Saving 40-company universe" data-pending-message="Company universe received — generating role calibration." data-company-curation>
         <div class="company-toolbar">
           <input type="search" data-company-filter placeholder="Filter 40 companies…" aria-label="Filter companies">
@@ -165,7 +163,7 @@
               <div class="company-card-top">
                 <div><h4>{{ company.name }}</h4><div class="company-meta"><span>{{ company.stage }}</span><span>·</span><span>{{ company.category }}</span></div></div>
                 <div class="company-controls">
-                  <label class="check-control priority-control" title="Prioritize this company"><input type="checkbox" name="priority" value="{{ company.name }}" {{ 'checked' if company.priority }}> ★</label>
+                  <label class="check-control priority-control" title="Prioritize this company"><input type="checkbox" name="priority" value="{{ company.name }}" {{ 'checked' if company.priority }}> Priority</label>
                   <label class="check-control"><input type="checkbox" name="included" value="{{ company.name }}" {{ 'checked' if company.included }}> Keep</label>
                 </div>
               </div>
@@ -176,15 +174,15 @@
         </section>
         {% endfor %}
         <div class="manual-add">
-          <label>Add companies Aster missed
-            <small>Enter names separated by commas. Aster will locate and verify their career sources during the first run.</small>
+          <label>Add a company
+            <small>Enter names separated by commas. The first run will locate and verify their career sources.</small>
             <input name="additions" placeholder="Company one, Company two">
           </label>
         </div>
         <fieldset>
           <legend class="eyebrow">Ongoing discovery</legend>
           <div class="scope-choice">
-            <label class="scope-option"><input type="radio" name="scope" value="exploratory" {{ 'checked' if draft.get('company_scope', 'exploratory') == 'exploratory' }}><span><strong>Let Aster find adjacencies</strong><small>New companies stay pending until you approve them.</small></span></label>
+            <label class="scope-option"><input type="radio" name="scope" value="exploratory" {{ 'checked' if draft.get('company_scope', 'exploratory') == 'exploratory' }}><span><strong>Find adjacent companies</strong><small>New companies stay pending until you approve them.</small></span></label>
             <label class="scope-option"><input type="radio" name="scope" value="strict" {{ 'checked' if draft.get('company_scope') == 'strict' }}><span><strong>Keep the boundary strict</strong><small>Only search the companies selected here.</small></span></label>
           </div>
         </fieldset>
@@ -194,12 +192,12 @@
       {% elif stage == "role_calibration" %}
       <p class="eyebrow">05 · Judgment</p>
       <h2>Teach the edges, not the title.</h2>
-      <p class="intro">Your target work is already captured. Label these contrasting situations so Aster learns where your judgment changes.</p>
+      <p class="intro">Your target work is already captured. Label these contrasting situations so the scoring policy changes at the right edges.</p>
       <form class="form-stack" method="post" action="/onboarding/roles" data-pending data-pending-label="Learning your judgment" data-pending-message="Calibration received — assembling your search constitution.">
         <div class="role-stack">
         {% for card in state.get('role_cards', []) %}
           <article class="role-card">
-            <div><h3>{{ card.title }}</h3><div class="role-subtitle">{{ card.subtitle }}</div><p>{{ card.description }}</p><div class="role-context">{{ card.context }} · Aster predicts {{ card.prediction }}</div></div>
+            <div><h3>{{ card.title }}</h3><div class="role-subtitle">{{ card.subtitle }}</div><p>{{ card.description }}</p><div class="role-context">{{ card.context }} · Initial classification: {{ card.prediction }}</div></div>
             <div class="segmented" role="radiogroup" aria-label="Rate {{ card.title }}">
               {% for value, label in [('excited','Excited'),('consider','Consider'),('pass','Pass')] %}
               <label><input type="radio" name="rating_{{ card.id }}" value="{{ value }}" {{ 'checked' if card.prediction == value }}><span>{{ label }}</span></label>
@@ -208,13 +206,13 @@
           </article>
         {% endfor %}
         </div>
-        <div class="form-actions"><button class="primary" type="submit" data-pending-label="Learning your judgment">Review my agent</button></div>
+        <div class="form-actions"><button class="primary" type="submit" data-pending-label="Saving role policy">Review search policy</button></div>
       </form>
 
       {% elif stage == "review" %}
       <p class="eyebrow">06 · Activate</p>
-      <h2>Your search has a point of view.</h2>
-      <p class="intro">This is the durable policy Aster will use. The resume supports fit; these choices govern intent.</p>
+      <h2>Review the search policy.</h2>
+      <p class="intro">This is the durable policy used for discovery and evaluation. The resume supports fit; these choices govern intent.</p>
       <div class="form-card">
         <div class="review-grid">
           <section class="review-section full"><h3>Role thesis</h3><p>{{ draft.get('role_thesis') }}</p><p class="muted">{{ draft.get('work_style') }}</p></section>
@@ -224,10 +222,10 @@
           <section class="review-section"><h3>Ranking</h3><p>{{ draft.get('stretch', 'balanced')|title }} stretch appetite</p><p class="muted">{{ draft.get('weekly_cadence', '10') }} strong opportunities per week</p></section>
           <section class="review-section full"><h3>Hard exclusions</h3><p>{{ draft.get('hard_exclusions') or 'None supplied.' }}</p><p class="muted">Excluded verticals: {{ draft.get('excluded_verticals', [])|join(', ') or 'none' }}</p></section>
         </div>
-        <div class="notice" style="margin-top:1rem"><span class="pulse-dot"></span><span>Activation immediately starts source discovery, job ingestion, and matching. You’ll see live progress instead of an empty dashboard.</span></div>
+        <div class="notice" style="margin-top:1rem"><span class="status-dot"></span><span>Activation starts source discovery, job ingestion, and matching. The next screen shows progress and any failures.</span></div>
         <div class="form-actions">
           <form method="post" action="/onboarding/edit/brief" data-pending data-pending-message="Opening your brief with everything preserved."><button class="secondary" type="submit" data-pending-label="Opening brief">Edit brief</button></form>
-          <form method="post" action="/onboarding/activate" data-pending data-pending-label="Starting your agent" data-pending-message="Agent activated — starting the first search now."><button class="primary" type="submit" data-pending-label="Starting your agent">Activate Aster</button></form>
+          <form method="post" action="/onboarding/activate" data-pending data-pending-label="Activating search" data-pending-message="Search activated — starting the first run."><button class="primary" type="submit" data-pending-label="Activating search">Activate search</button></form>
         </div>
       </div>
       {% endif %}

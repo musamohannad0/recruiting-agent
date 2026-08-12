@@ -1,14 +1,14 @@
 {% extends "base.html" %}
 {% from "macros.html" import match_row %}
-{% block title %}Today — Aster{% endblock %}
+{% block title %}Today — Recruiting Agent{% endblock %}
 {% block content %}
 <section class="briefing-hero">
   <div>
     <p class="eyebrow">Today · Search briefing</p>
-    <h2>Aster is on it.</h2>
-    <p class="lede">Your search keeps moving between visits. Here is what deserves your attention now, with the policy and evidence behind it.</p>
+    <h2>Search briefing</h2>
+    <p class="lede">What needs your attention now, with the policy and evidence behind each recommendation.</p>
   </div>
-  <a class="agent-status-card" href="/activity"><span class="agent-orb"><i></i></span><span><strong>Agent active</strong><small>View reasoning and actions →</small></span></a>
+  <a class="agent-status-card" href="/activity"><span class="status-dot" aria-hidden="true"></span><span><strong>Agent active</strong><small>View actions and checkpoints</small></span></a>
 </section>
 
 <div class="stat-strip" aria-label="Search coverage">
@@ -20,7 +20,7 @@
 
 {% if pending %}
 <section class="attention-card">
-  <div><span class="pill status-warning">Your call</span><h3>{{ pending|length }} adjacent {{ 'company' if pending|length == 1 else 'companies' }} need approval</h3><p>Aster found these outside your starting universe. Nothing is searched until you decide.</p></div>
+  <div><span class="pill status-warning">Decision needed</span><h3>{{ pending|length }} adjacent {{ 'company' if pending|length == 1 else 'companies' }} need approval</h3><p>These sit outside the approved company set. They will not be searched until you decide.</p></div>
   <a class="button secondary" href="/companies">Review suggestions</a>
 </section>
 {% endif %}
@@ -32,9 +32,9 @@
   <tbody>{% for match, job, company, red_flags in top %}{{ match_row(match, job, company, red_flags) }}{% endfor %}</tbody>
 </table>
 {% elif jobs_active %}
-<div class="empty-state"><span class="agent-orb"><i></i></span><h3>Aster is evaluating {{ jobs_active }} roles.</h3><p>None has crossed your 75-point attention threshold yet. Lower-confidence possibilities remain visible in Matches.</p><a class="button secondary" href="/matches">Browse all evaluations</a></div>
+<div class="empty-state"><h3>{{ jobs_active }} roles are under evaluation</h3><p>None has crossed your 75-point attention threshold yet. Lower-confidence possibilities remain visible in Matches.</p><a class="button secondary" href="/matches">Browse all evaluations</a></div>
 {% else %}
-<div class="empty-state"><span class="agent-orb"><i></i></span><h3>The first source scan is underway.</h3><p>Aster will surface roles here as soon as they clear your policy and evidence checks.</p><a class="button secondary" href="/activity">Follow agent activity</a></div>
+<div class="empty-state"><h3>Initial source scan in progress</h3><p>Roles will appear here after they clear the active policy and evidence checks.</p><a class="button secondary" href="/activity">View agent activity</a></div>
 {% endif %}
 
 {% if runs %}

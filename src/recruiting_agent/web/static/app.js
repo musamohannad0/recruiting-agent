@@ -22,7 +22,7 @@
         button.setAttribute("aria-busy", "true");
         button.innerHTML = `<span class="spinner"></span>${button.dataset.pendingLabel || form.dataset.pendingLabel || "Working…"}`;
       }
-      showToast(form.dataset.pendingMessage || "Received — Aster is working on it.");
+      showToast(form.dataset.pendingMessage || "Received — the agent is processing it.");
     });
   });
 
@@ -33,7 +33,7 @@
     button.disabled = true;
     button.setAttribute("aria-busy", "true");
     button.innerHTML = `<span class="spinner"></span>${button.dataset.pendingLabel || "Saving…"}`;
-    showToast(button.dataset.pendingMessage || "Received — Aster is updating it.");
+    showToast(button.dataset.pendingMessage || "Received — the agent is updating it.");
   });
   document.body.addEventListener("htmx:responseError", (event) => {
     const button = event.detail.elt;

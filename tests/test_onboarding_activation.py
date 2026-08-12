@@ -70,4 +70,4 @@ def test_activation_redirects_to_live_progress_and_syncs_approved_companies(
 
     progress = client.get("/getting-started")
     assert progress.status_code == 200
-    assert "Aster is building your map" in progress.text
+    assert "Initial search in progress" in progress.text

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Starting your search — Aster{% endblock %}
+{% block title %}Starting your search — Recruiting Agent{% endblock %}
 {% block content %}
 <section data-boot-poll data-signature="">
   <p class="eyebrow">First search</p>
-  <h2>Aster is building your map.</h2>
-  <p class="lede">Your policy is active. The first run verifies company sources, collects current openings, and evaluates them against your new harness.</p>
+  <h2>Initial search in progress</h2>
+  <p class="lede">The policy is active. This run verifies company sources, collects current openings, and evaluates them against the active harness.</p>
   <article class="panel" style="max-width:760px">
-    <div style="display:flex;align-items:center;gap:1rem"><span class="agent-orb"><i></i></span><div><strong>{{ cycle.phase|replace('_',' ')|title if cycle else 'Queued' }}</strong><div class="muted">{{ 'Cycle ' ~ cycle.id if cycle else 'The coordinator is about to claim the first cycle.' }}</div></div></div>
+    <div style="display:flex;align-items:center;gap:.7rem"><span class="status-dot" aria-hidden="true"></span><div><strong>{{ cycle.phase|replace('_',' ')|title if cycle else 'Queued' }}</strong><div class="muted">{{ 'Cycle ' ~ cycle.id if cycle else 'Waiting for the coordinator to claim the first cycle.' }}</div></div></div>
     <div class="progress-list">
       {% set action_map = {} %}
       {% for action in actions %}{% set _ = action_map.update({action.kind: action}) %}{% endfor %}
