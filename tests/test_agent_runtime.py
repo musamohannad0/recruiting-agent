@@ -19,6 +19,7 @@ class FakeRuntime:
                 "question": "Would you trade company prestige for substantially more technical ownership?",
                 "topic": "tradeoffs",
                 "complete": False,
+                "reason": "This determines how the agent ranks ownership against company brand.",
             },
             trace_id=None,
             cost_usd=0,
@@ -29,11 +30,17 @@ class FakeRuntime:
 async def test_interviewer_asks_agent_question_from_uploaded_resume(tmp_path: Path):
     ws = CandidateWorkspace(tmp_path)
     ws.store_resume("resume.pdf", b"opaque-pdf")
+    ws.save_search_brief(
+        {
+            "role_thesis": "Technical product and deployment work",
+            "locations": ["New York City"],
+        }
+    )
     runtime = FakeRuntime()
 
     question = await OnboardingInterviewer(ws, runtime).next_question()
 
-    assert "technical ownership" in question
+    assert "technical ownership" in question["question"]
     assert "uploads/resume.pdf" in runtime.prompts[0][1]
     assert ws.load_state()["current_question"] == question
 

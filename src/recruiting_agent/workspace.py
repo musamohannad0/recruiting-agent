@@ -197,8 +197,9 @@ class CandidateWorkspace:
     @property
     def is_ready(self) -> bool:
         # Loading first performs the one-time v1 questionnaire migration.
+        had_state = self.state_path.exists()
         state = self.load_state()
-        if state.get("stage") != OnboardingStage.ready.value:
+        if had_state and state.get("stage") != OnboardingStage.ready.value:
             return False
         if not self.manifest_path.exists():
             return False
