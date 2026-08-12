@@ -104,12 +104,12 @@ class CandidateWorkspace:
             self.save_state(state)
         if (
             state.get("stage") == OnboardingStage.company_calibration.value
-            and int(state.get("company_catalog_version", 1)) < 2
+            and int(state.get("company_catalog_version", 1)) < 3
         ):
             state["company_candidates"] = self._build_company_candidates(
                 state.get("search_draft", {})
             )
-            state["company_catalog_version"] = 2
+            state["company_catalog_version"] = 3
             self.save_state(state)
         return state
 
@@ -326,7 +326,7 @@ class CandidateWorkspace:
         state = state or self.load_state()
         if not state.get("company_candidates"):
             state["company_candidates"] = self._build_company_candidates(state.get("search_draft", {}))
-        state["company_catalog_version"] = 2
+        state["company_catalog_version"] = 3
         state["stage"] = OnboardingStage.company_calibration.value
         state["current_question"] = None
         state["generation"] = {"status": "complete", "message": "Your initial company universe is ready."}
@@ -468,7 +468,7 @@ class CandidateWorkspace:
 
         def score(category: str, stage: str) -> int:
             value = sum(3 for signal in category_signals.get(category, ()) if signal in preferences)
-            if "private" in preferences and stage == "Private":
+            if ("private" in preferences or "non public" in preferences) and stage == "Private":
                 value += 2
             if "public" in preferences and "non public" not in preferences and stage == "Public":
                 value += 1

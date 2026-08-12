@@ -237,7 +237,7 @@ def onboarding_activate(background_tasks: BackgroundTasks):
     from ..seed import sync_candidate_companies
 
     with get_session() as session:
-        sync_candidate_companies(session)
+        sync_candidate_companies(session, workspace)
     background_tasks.add_task(_run_initial_cycle)
     return RedirectResponse("/getting-started", status_code=303)
 

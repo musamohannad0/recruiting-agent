@@ -5,12 +5,13 @@ from sqlmodel import Session, select
 
 from .models import Company, CompanyStatus
 from .settings import settings
-from .workspace import workspace
+from .workspace import CandidateWorkspace, workspace
 
 
-def load_company_config() -> list[dict]:
-    if workspace.is_ready:
-        candidate_config = workspace.root / "policy" / "companies.yaml"
+def load_company_config(candidate_workspace: CandidateWorkspace | None = None) -> list[dict]:
+    candidate_workspace = candidate_workspace or workspace
+    if candidate_workspace.is_ready:
+        candidate_config = candidate_workspace.root / "policy" / "companies.yaml"
         data = yaml.safe_load(candidate_config.read_text()) or {}
         catalog: dict[str, dict] = {}
         if settings.companies_yaml.exists():
@@ -44,10 +45,12 @@ def slug_candidates(entry: dict) -> list[str]:
     return [c for c in candidates if not (c in seen or seen.add(c))]
 
 
-def seed_companies(session: Session) -> tuple[int, int]:
+def seed_companies(
+    session: Session, candidate_workspace: CandidateWorkspace | None = None
+) -> tuple[int, int]:
     """Insert companies from config that aren't in the DB yet. Returns (added, existing)."""
     added = existing = 0
-    for entry in load_company_config():
+    for entry in load_company_config(candidate_workspace):
         row = session.exec(select(Company).where(Company.name == entry["name"])).first()
         if row is None:
             session.add(Company(name=entry["name"], careers_url=entry.get("careers_url")))
@@ -58,11 +61,13 @@ def seed_companies(session: Session) -> tuple[int, int]:
     return added, existing
 
 
-def sync_candidate_companies(session: Session) -> tuple[int, int]:
+def sync_candidate_companies(
+    session: Session, candidate_workspace: CandidateWorkspace | None = None
+) -> tuple[int, int]:
     """Activate the approved universe and pause unrelated legacy rows without deleting history."""
-    configured = load_company_config()
+    configured = load_company_config(candidate_workspace)
     approved = {entry["name"].casefold() for entry in configured}
-    added, existing = seed_companies(session)
+    added, existing = seed_companies(session, candidate_workspace)
     for company in session.exec(select(Company)).all():
         company.status = (
             CompanyStatus.active if company.name.casefold() in approved else CompanyStatus.paused
