@@ -7,7 +7,7 @@
     window.setTimeout(() => toast.classList.remove("show"), 2600);
   }
 
-  document.querySelectorAll("form[data-pending]").forEach((form) => {
+  document.querySelectorAll("form[data-pending], form[method='post']").forEach((form) => {
     form.addEventListener("submit", (event) => {
       if (!form.checkValidity()) return;
       if (form.dataset.submitting === "true") {
@@ -24,6 +24,24 @@
       }
       showToast(form.dataset.pendingMessage || "Received — Aster is working on it.");
     });
+  });
+
+  document.body.addEventListener("htmx:beforeRequest", (event) => {
+    const button = event.detail.elt;
+    if (!(button instanceof HTMLButtonElement)) return;
+    button.dataset.originalLabel = button.innerHTML;
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    button.innerHTML = `<span class="spinner"></span>${button.dataset.pendingLabel || "Saving…"}`;
+    showToast(button.dataset.pendingMessage || "Received — Aster is updating it.");
+  });
+  document.body.addEventListener("htmx:responseError", (event) => {
+    const button = event.detail.elt;
+    if (!(button instanceof HTMLButtonElement)) return;
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+    if (button.dataset.originalLabel) button.innerHTML = button.dataset.originalLabel;
+    showToast("That did not save. Please try again.");
   });
 
   window.addEventListener("pageshow", () => {

@@ -225,9 +225,10 @@
           <section class="review-section full"><h3>Hard exclusions</h3><p>{{ draft.get('hard_exclusions') or 'None supplied.' }}</p><p class="muted">Excluded verticals: {{ draft.get('excluded_verticals', [])|join(', ') or 'none' }}</p></section>
         </div>
         <div class="notice" style="margin-top:1rem"><span class="pulse-dot"></span><span>Activation immediately starts source discovery, job ingestion, and matching. You’ll see live progress instead of an empty dashboard.</span></div>
-        <form method="post" action="/onboarding/activate" data-pending data-pending-label="Starting your agent" data-pending-message="Agent activated — starting the first search now.">
-          <div class="form-actions"><a class="button secondary" href="/onboarding">Edit</a><button class="primary" type="submit" data-pending-label="Starting your agent">Activate Aster</button></div>
-        </form>
+        <div class="form-actions">
+          <form method="post" action="/onboarding/edit/brief" data-pending data-pending-message="Opening your brief with everything preserved."><button class="secondary" type="submit" data-pending-label="Opening brief">Edit brief</button></form>
+          <form method="post" action="/onboarding/activate" data-pending data-pending-label="Starting your agent" data-pending-message="Agent activated — starting the first search now."><button class="primary" type="submit" data-pending-label="Starting your agent">Activate Aster</button></form>
+        </div>
       </div>
       {% endif %}
     </section>

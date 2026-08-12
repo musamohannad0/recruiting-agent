@@ -188,6 +188,14 @@ def onboarding_interview_finish():
     return RedirectResponse("/onboarding", status_code=303)
 
 
+@app.post("/onboarding/edit/brief")
+def onboarding_edit_brief():
+    state = workspace.load_state()
+    state["stage"] = OnboardingStage.brief.value
+    workspace.save_state(state)
+    return RedirectResponse("/onboarding", status_code=303)
+
+
 def _csv(value: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 

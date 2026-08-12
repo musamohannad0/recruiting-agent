@@ -1,57 +1,48 @@
 {% extends "base.html" %}
-{% from "macros.html" import match_row, score_badge %}
+{% from "macros.html" import match_row %}
+{% block title %}Today — Aster{% endblock %}
 {% block content %}
-<h2>Overview</h2>
-<div class="grid">
-  <article><header><strong>{{ companies_active }}</strong></header>active companies</article>
-  <article><header><strong>{{ jobs_active }}</strong></header>open roles tracked</article>
-  <article><header><strong>{{ plausible }}</strong> / {{ prefiltered }}</header>passed prefilter</article>
-  <article><header><strong>{{ scored }}</strong></header>scored in depth</article>
+<section class="briefing-hero">
+  <div>
+    <p class="eyebrow">Today · Search briefing</p>
+    <h2>Aster is on it.</h2>
+    <p class="lede">Your search keeps moving between visits. Here is what deserves your attention now, with the policy and evidence behind it.</p>
+  </div>
+  <a class="agent-status-card" href="/activity"><span class="agent-orb"><i></i></span><span><strong>Agent active</strong><small>View reasoning and actions →</small></span></a>
+</section>
+
+<div class="stat-strip" aria-label="Search coverage">
+  <div><strong>{{ companies_active }}</strong><span>companies watched</span></div>
+  <div><strong>{{ jobs_active }}</strong><span>open roles collected</span></div>
+  <div><strong>{{ plausible }}</strong><span>plausible fits</span></div>
+  <div><strong>{{ scored }}</strong><span>deep evaluations</span></div>
 </div>
 
 {% if pending %}
-<article>
-  <header><strong>Discovered companies awaiting approval</strong> <span class="badge">{{ pending|length }}</span></header>
-  <ul>
-    {% for c in pending %}
-    <li><strong>{{ c.name }}</strong> — {{ c.discovery_rationale }}
-      <form method="post" action="/companies/{{ c.id }}/decision" style="display:inline">
-        <button name="decision" value="approve" style="width:auto;display:inline-block;padding:.1rem .5rem">approve</button>
-        <button name="decision" value="reject" class="secondary" style="width:auto;display:inline-block;padding:.1rem .5rem">reject</button>
-      </form>
-    </li>
-    {% endfor %}
-  </ul>
-</article>
+<section class="attention-card">
+  <div><span class="pill status-warning">Your call</span><h3>{{ pending|length }} adjacent {{ 'company' if pending|length == 1 else 'companies' }} need approval</h3><p>Aster found these outside your starting universe. Nothing is searched until you decide.</p></div>
+  <a class="button secondary" href="/companies">Review suggestions</a>
+</section>
 {% endif %}
 
-<h3>Top unreviewed matches (75+)</h3>
+<section class="section-heading"><div><p class="eyebrow">Recommended now</p><h3>Roles worth your attention</h3></div><a href="/matches">All matches →</a></section>
 {% if top %}
-<table>
-  <thead><tr><th>Score</th><th>Role</th><th>Link</th><th>Status</th></tr></thead>
-  <tbody>
-  {% for match, job, company, red_flags in top %}
-    {{ match_row(match, job, company, red_flags) }}
-  {% endfor %}
-  </tbody>
+<table class="match-table">
+  <thead><tr><th>Score</th><th>Role and reasoning</th><th>Posting</th><th>Your status</th></tr></thead>
+  <tbody>{% for match, job, company, red_flags in top %}{{ match_row(match, job, company, red_flags) }}{% endfor %}</tbody>
 </table>
-<p><a href="/matches">See all matches →</a></p>
+{% elif jobs_active %}
+<div class="empty-state"><span class="agent-orb"><i></i></span><h3>Aster is evaluating {{ jobs_active }} roles.</h3><p>None has crossed your 75-point attention threshold yet. Lower-confidence possibilities remain visible in Matches.</p><a class="button secondary" href="/matches">Browse all evaluations</a></div>
 {% else %}
-<p class="muted">No unreviewed 75+ matches. <a href="/matches">Browse all matches</a>.</p>
+<div class="empty-state"><span class="agent-orb"><i></i></span><h3>The first source scan is underway.</h3><p>Aster will surface roles here as soon as they clear your policy and evidence checks.</p><a class="button secondary" href="/activity">Follow agent activity</a></div>
 {% endif %}
 
-<h3>Recent runs</h3>
-<table>
-  <thead><tr><th>Kind</th><th>Status</th><th>Started</th><th>Stats</th></tr></thead>
-  <tbody>
-  {% for run, stats in runs %}
-  <tr>
-    <td>{{ run.kind }}</td>
-    <td>{{ run.status }}</td>
-    <td class="muted">{{ run.started_at.strftime("%Y-%m-%d %H:%M") }}</td>
-    <td class="muted">{{ stats }}</td>
-  </tr>
+{% if runs %}
+<section class="section-heading"><div><p class="eyebrow">Recent work</p><h3>Pipeline runs</h3></div><a href="/runs">Full run history →</a></section>
+<div class="run-list">
+  {% for run, stats in runs[:4] %}
+  <div class="run-item"><span class="progress-icon {{ run.status }}">{{ '✓' if run.status == 'success' else '·' }}</span><div><strong>{{ run.kind|replace('_',' ')|title }}</strong><small>{{ run.started_at.strftime('%b %-d · %-I:%M %p') }}</small></div><span class="pill {{ 'status-success' if run.status == 'success' else ('status-failed' if run.status == 'failed') }}">{{ run.status }}</span></div>
   {% endfor %}
-  </tbody>
-</table>
+</div>
+{% endif %}
 {% endblock %}
