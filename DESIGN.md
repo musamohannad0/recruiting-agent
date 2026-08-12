@@ -11,9 +11,13 @@ It should feel like serious, well-made software—not an AI landing page.
 - Prefer a flat hierarchy: page, section, row. Use cards only for genuinely independent
   objects, not as the default container for every piece of content.
 - Use spacing, type weight, and rules before shadows, color fills, or rounded containers.
-- Keep the palette neutral. Blue marks selection or a primary action; green, amber, and
-  red are reserved for operational state.
-- Motion confirms an action or explains a state change. No ambient animation.
+- Keep a neutral foundation, not a monochrome result. Blue marks selection or a primary
+  action; green, amber, and red communicate operational state. A restrained secondary
+  accent may distinguish a live agent surface.
+- Motion confirms an action, reveals detail, or makes live progress legible. Small status
+  animations may continue only while work is actually running; never animate as wallpaper.
+- Concentrate personality around high-signal moments: current agent work, a useful result,
+  or a decision that needs the candidate. Routine controls should remain quiet.
 - Copy is direct and factual. Say what the system is doing, what evidence it used, and
   what the candidate needs to decide.
 

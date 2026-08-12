@@ -495,20 +495,180 @@ def runs(request: Request):
     return render(request, "runs.html", active_page="runs", runs=run_rows)
 
 
+ACTIVITY_PHASES = [
+    ("probe", "Verify sources", "Check which career systems can be trusted."),
+    ("ingest", "Collect openings", "Pull current roles from approved companies."),
+    ("match", "Evaluate roles", "Apply the active search policy and evidence rubric."),
+    ("scout", "Scout gaps", "Inspect unsupported career sites for missing coverage."),
+    ("consolidate_memory", "Update memory", "Turn durable observations into a reviewable revision."),
+    ("digest", "Prepare briefing", "Summarize what changed and what needs attention."),
+]
+
+
+def _activity_json(raw: str) -> dict:
+    try:
+        value = json.loads(raw or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {"result": raw}
+    return value if isinstance(value, dict) else {"result": value}
+
+
+def _activity_status(value) -> str:
+    return getattr(value, "value", str(value))
+
+
+def _activity_duration(action: AgentAction) -> str:
+    now = datetime.now(timezone.utc)
+    if action.created_at.tzinfo is None:
+        now = now.replace(tzinfo=None)
+    seconds = max(0, int(((action.finished_at or now) - action.created_at).total_seconds()))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds:02d}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes:02d}m"
+
+
+def _activity_action_view(action: AgentAction, *, collected_roles: int = 0) -> dict:
+    payload = _activity_json(action.result_json)
+    status = _activity_status(action.status)
+    definitions = {kind: (title, detail) for kind, title, detail in ACTIVITY_PHASES}
+    title, detail = definitions.get(
+        action.kind,
+        (action.kind.replace("_", " ").title(), "A persisted agent action."),
+    )
+    if status == "running":
+        if action.kind == "match" and collected_roles:
+            summary = f"Evaluating {collected_roles:,} newly collected roles"
+        else:
+            summary = f"{detail.rstrip('.')} now"
+    elif status == "failed":
+        summary = action.error or "The action stopped before completing."
+    elif action.kind == "ingest" and payload:
+        summary = (
+            f"{int(payload.get('new', 0)):,} new roles across "
+            f"{int(payload.get('companies', 0)):,} companies"
+        )
+        if payload.get("errors"):
+            summary += f" · {payload['errors']} source errors"
+    elif action.kind == "probe":
+        summary = "Career sources verified and ready for collection"
+    elif action.kind == "match" and payload:
+        evaluated = payload.get("evaluated") or payload.get("scored") or payload.get("jobs")
+        summary = f"{int(evaluated):,} roles evaluated" if evaluated else "Role evaluation complete"
+    elif payload:
+        summary = str(payload.get("summary") or payload.get("status") or detail)
+    else:
+        summary = detail
+    return {
+        "id": action.id,
+        "cycle_id": action.cycle_id,
+        "kind": action.kind,
+        "title": title,
+        "detail": detail,
+        "status": status,
+        "summary": summary,
+        "attempts": action.attempts,
+        "duration": _activity_duration(action),
+        "created_at": action.created_at,
+        "finished_at": action.finished_at,
+        "payload": payload,
+        "payload_pretty": json.dumps(payload, indent=2, sort_keys=True, default=str),
+        "error": action.error,
+    }
+
+
+def _activity_signature(cycle: AgentCycle | None, actions: list[AgentAction], events: list[AgentEvent]) -> str:
+    cycle_state = "none" if cycle is None else f"{cycle.id}:{_activity_status(cycle.status)}:{cycle.phase}"
+    action_state = ",".join(
+        f"{action.id}:{_activity_status(action.status)}:{action.finished_at or ''}" for action in actions[:12]
+    )
+    event_state = str(events[0].id) if events else "0"
+    return f"{cycle_state}|{action_state}|{event_state}"
+
+
 @app.get("/activity", response_class=HTMLResponse)
 def activity(request: Request):
     with get_session() as s:
         cycles = s.exec(select(AgentCycle).order_by(AgentCycle.started_at.desc()).limit(50)).all()
         actions = s.exec(select(AgentAction).order_by(AgentAction.created_at.desc()).limit(100)).all()
         events = s.exec(select(AgentEvent).order_by(AgentEvent.created_at.desc()).limit(100)).all()
+    latest_cycle = cycles[0] if cycles else None
+    ingest_payload = next(
+        (_activity_json(action.result_json) for action in actions if action.kind == "ingest" and _activity_status(action.status) == "success"),
+        {},
+    )
+    collected_roles = int(ingest_payload.get("new", 0) or 0)
+    action_views = [_activity_action_view(action, collected_roles=collected_roles) for action in actions]
+    current_action = next((action for action in action_views if action["status"] == "running"), None)
+    if current_action is None and action_views:
+        current_action = action_views[0]
+    latest_actions = {action["kind"]: action for action in action_views if latest_cycle and action["cycle_id"] == latest_cycle.id}
+    phase_views = []
+    for kind, title, detail in ACTIVITY_PHASES:
+        action = latest_actions.get(kind)
+        phase_views.append(
+            {
+                "kind": kind,
+                "title": title,
+                "detail": detail,
+                "status": action["status"] if action else "pending",
+                "summary": action["summary"] if action else "Queued",
+            }
+        )
+    event_views = []
+    for event in events:
+        payload = _activity_json(event.payload_json)
+        event_views.append(
+            {
+                "id": event.id,
+                "type": event.event_type,
+                "label": event.event_type.replace("_", " ").title(),
+                "source": event.source,
+                "confidence": event.confidence,
+                "cycle_id": event.cycle_id,
+                "harness_hash": event.harness_hash,
+                "created_at": event.created_at,
+                "payload_pretty": json.dumps(payload, indent=2, sort_keys=True, default=str),
+            }
+        )
+    completed_count = sum(action["status"] == "success" for action in action_views)
+    failed_count = sum(action["status"] == "failed" for action in action_views)
     return render(
         request,
         "activity.html",
         active_page="activity",
         cycles=cycles,
-        actions=actions,
-        events=events,
+        actions=action_views,
+        events=event_views,
+        latest_cycle=latest_cycle,
+        current_action=current_action,
+        phases=phase_views,
+        completed_count=completed_count,
+        failed_count=failed_count,
+        collected_roles=collected_roles,
+        activity_signature=_activity_signature(latest_cycle, actions, events),
     )
+
+
+@app.get("/activity/status")
+def activity_status():
+    with get_session() as s:
+        cycle = s.exec(select(AgentCycle).order_by(AgentCycle.started_at.desc()).limit(1)).first()
+        actions = s.exec(select(AgentAction).order_by(AgentAction.created_at.desc()).limit(12)).all()
+        events = s.exec(select(AgentEvent).order_by(AgentEvent.created_at.desc()).limit(1)).all()
+    running = next((action for action in actions if _activity_status(action.status) == "running"), None)
+    return {
+        "signature": _activity_signature(cycle, actions, events),
+        "status": _activity_status(cycle.status) if cycle else "idle",
+        "phase": cycle.phase if cycle else "waiting",
+        "phase_label": (
+            next((title for kind, title, _ in ACTIVITY_PHASES if running and kind == running.kind), None)
+            or (cycle.phase.replace("_", " ").title() if cycle else "Waiting for first cycle")
+        ),
+    }
 
 
 @app.get("/search-state", response_class=HTMLResponse)

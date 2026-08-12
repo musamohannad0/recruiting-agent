@@ -3,10 +3,12 @@ from datetime import datetime, timedelta, timezone
 from sqlmodel import Session, SQLModel, create_engine
 
 from recruiting_agent.models import Company, Job, JobReview, Match, Recommendation
-from recruiting_agent.web.app import _match_rows
+from recruiting_agent.web import app as web_module
+from recruiting_agent.workspace import CandidateWorkspace
 
 
-def test_match_list_uses_latest_score_and_job_level_review_state():
+def test_match_list_uses_latest_score_and_job_level_review_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(web_module, "workspace", CandidateWorkspace(tmp_path))
     engine = create_engine("sqlite://")
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
@@ -48,9 +50,9 @@ def test_match_list_uses_latest_score_and_job_level_review_state():
         session.add(JobReview(job_id=job.id, user_status="dismissed"))
         session.commit()
 
-        rows = _match_rows(session, status="dismissed")
+        rows = web_module._match_rows(session, status="dismissed")
 
         assert len(rows) == 1
         assert rows[0][0].score == 55
         assert rows[0][0].user_status == "dismissed"
-        assert _match_rows(session, min_score=60, status="all") == []
+        assert web_module._match_rows(session, min_score=60, status="all") == []

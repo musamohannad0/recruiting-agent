@@ -128,4 +128,81 @@
     };
     window.setTimeout(poll, 900);
   }
+
+  const activityRoot = document.querySelector("[data-activity-poll]");
+  if (activityRoot) {
+    const filterButtons = [...activityRoot.querySelectorAll("[data-activity-filter]")];
+    const actionRows = [...activityRoot.querySelectorAll("[data-activity-status]")];
+    const filterEmpty = activityRoot.querySelector("[data-filter-empty]");
+    const rememberDisclosures = () => {
+      const open = [...activityRoot.querySelectorAll("[data-disclosure-id][open]")].map(
+        (detail) => detail.dataset.disclosureId,
+      );
+      window.sessionStorage.setItem("activity-open", JSON.stringify(open));
+    };
+    try {
+      const open = JSON.parse(window.sessionStorage.getItem("activity-open") || "[]");
+      open.forEach((id) => activityRoot.querySelector(`[data-disclosure-id="${id}"]`)?.setAttribute("open", ""));
+      window.sessionStorage.removeItem("activity-open");
+    } catch (_) {}
+
+    filterButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const filter = button.dataset.activityFilter;
+        filterButtons.forEach((candidate) => {
+          const active = candidate === button;
+          candidate.classList.toggle("active", active);
+          candidate.setAttribute("aria-pressed", String(active));
+        });
+        let visible = 0;
+        actionRows.forEach((row) => {
+          row.hidden = filter !== "all" && row.dataset.activityStatus !== filter;
+          if (!row.hidden) visible += 1;
+        });
+        if (filterEmpty) filterEmpty.hidden = visible !== 0;
+      });
+    });
+
+    activityRoot.querySelectorAll("[data-copy-payload]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const payload = button.closest(".payload-block")?.querySelector("pre")?.textContent || "";
+        try {
+          await navigator.clipboard.writeText(payload);
+          button.textContent = "Copied";
+          showToast("Recorded result copied.");
+          window.setTimeout(() => { button.textContent = "Copy JSON"; }, 1400);
+        } catch (_) {
+          showToast("Could not copy this result.");
+        }
+      });
+    });
+
+    let activitySignature = activityRoot.dataset.signature;
+    const pollActivity = async () => {
+      if (document.hidden) {
+        window.setTimeout(pollActivity, 2500);
+        return;
+      }
+      try {
+        const response = await fetch("/activity/status", { headers: { "Accept": "application/json" } });
+        const data = await response.json();
+        const livePhase = activityRoot.querySelector("[data-live-phase]");
+        const liveStatus = activityRoot.querySelector("[data-live-status]");
+        if (livePhase) livePhase.textContent = data.phase_label;
+        if (liveStatus) {
+          liveStatus.textContent = data.status;
+          liveStatus.className = `live-status status-${data.status}`;
+        }
+        if (activitySignature && data.signature !== activitySignature) {
+          rememberDisclosures();
+          activityRoot.classList.add("is-updating");
+          window.setTimeout(() => window.location.reload(), 180);
+          return;
+        }
+        activitySignature = data.signature;
+      } catch (_) {}
+      window.setTimeout(pollActivity, 2500);
+    };
+    window.setTimeout(pollActivity, 1500);
+  }
 })();
