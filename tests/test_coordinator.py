@@ -84,6 +84,22 @@ async def test_cycle_is_idempotent_within_cadence_bucket(tmp_path, session_facto
 
 
 @pytest.mark.asyncio
+async def test_cycle_waits_for_candidate_activation(tmp_path, session_factory):
+    calls = []
+    coordinator = SearchCoordinator(
+        CandidateWorkspace(tmp_path),
+        session_factory,
+        fake_operations(calls),
+        initialize=lambda: None,
+    )
+
+    result = await coordinator.run_cycle("scheduled")
+
+    assert result == {"status": "skipped", "reason": "candidate onboarding incomplete"}
+    assert calls == []
+
+
+@pytest.mark.asyncio
 async def test_held_lease_skips_overlapping_cycle(tmp_path, session_factory):
     coordinator = SearchCoordinator(
         ready_workspace(tmp_path),

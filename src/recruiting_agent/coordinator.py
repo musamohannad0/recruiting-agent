@@ -83,6 +83,11 @@ class SearchCoordinator:
 
     async def run_cycle(self, trigger: str = "scheduled") -> dict[str, Any]:
         self.initialize()
+        if not self.candidate_workspace.is_ready:
+            return {
+                "status": CycleStatus.skipped.value,
+                "reason": "candidate onboarding incomplete",
+            }
         token = uuid.uuid4().hex
         if not self._acquire_lease(token):
             return {"status": CycleStatus.skipped.value, "reason": "coordinator lease held"}
