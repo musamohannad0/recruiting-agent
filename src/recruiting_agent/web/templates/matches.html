@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% from "macros.html" import match_row %}
+{% block title %}Matches — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Matches</h2>
-<form method="get" action="/matches" class="grid">
+<header class="matches-hero">
+  <div><p class="eyebrow">Active harness · {{ harness_hash[:8] }}</p><h2>Ranked matches</h2><p class="lede">Latest evaluation per role, ordered by score. Open “Why this score” to audit the evidence and model record.</p></div>
+  <div class="sort-indicator"><span>Sorted by</span><strong>Score ↓</strong></div>
+</header>
+<form method="get" action="/matches" class="match-filters">
   <label>Min score
     <input type="number" name="min_score" value="{{ min_score }}" min="0" max="100">
   </label>
@@ -20,12 +24,12 @@
       {% endfor %}
     </select>
   </label>
-  <label>&nbsp;<button type="submit">Filter</button></label>
+  <label class="filter-action"><span>Update results</span><button class="primary" type="submit">Apply filters</button></label>
 </form>
 
-<p class="muted">{{ rows|length }} matches</p>
-<table>
-  <thead><tr><th>Score</th><th>Role</th><th>Link</th><th>Status</th></tr></thead>
+<div class="match-list-heading"><span>{{ rows|length }} matches</span><span>Highest confidence first</span></div>
+<table class="match-table">
+  <thead><tr><th>Score</th><th>Role and evaluation</th><th>Posting</th><th>Your status</th></tr></thead>
   <tbody>
   {% for match, job, company, red_flags in rows %}
     {{ match_row(match, job, company, red_flags) }}

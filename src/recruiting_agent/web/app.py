@@ -319,7 +319,7 @@ def overview(request: Request):
 
 
 def _match_rows(s, min_score: int = 0, limit: int = 500, status: str = "all", rec: str = "all"):
-    """Latest match per job, joined with job + company, filtered and sorted by score."""
+    """Latest active-harness match per job, filtered and sorted by score descending."""
     query = (
         select(Match, Job, Company)
         .join(Job, Match.job_id == Job.id)
@@ -349,9 +349,8 @@ def _match_rows(s, min_score: int = 0, limit: int = 500, status: str = "all", re
         if rec != "all" and match.recommendation != rec:
             continue
         out.append((match, job, company, json.loads(match.red_flags or "[]")))
-        if len(out) >= limit:
-            break
-    return out
+    out.sort(key=lambda row: (row[0].score, row[0].created_at), reverse=True)
+    return out[:limit]
 
 
 @app.get("/matches", response_class=HTMLResponse)
@@ -368,6 +367,7 @@ def matches(request: Request, min_score: int | None = None, status: str = "new",
         min_score=min_score,
         status=status,
         rec=rec,
+        harness_hash=workspace.harness_hash if workspace.is_ready else "",
     )
 
 

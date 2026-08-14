@@ -9,15 +9,24 @@
 </p>
 
 {% if match %}
-<article>
-  <header>{{ score_badge(match.score) }} <span class="rec-{{ match.recommendation }}">{{ match.recommendation }}</span></header>
-  <p>{{ match.reasoning }}</p>
-  {% if red_flags %}<p><strong>Red flags:</strong></p><ul>{% for f in red_flags %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
-  <p class="muted">Seniority: {{ match.seniority_fit }}<br>Location: {{ match.location_fit }}</p>
-  <footer class="muted">{{ match.model }} · {{ match.created_at.strftime("%Y-%m-%d %H:%M") }}</footer>
+<article class="evaluation-card">
+  <header><div>{{ score_badge(match.score) }} <span class="rec-{{ match.recommendation }}">{{ match.recommendation }}</span></div><span class="eyebrow">Why {{ match.score }}/100</span></header>
+  <section><span class="rationale-label">Agent rationale</span><p>{{ match.reasoning }}</p></section>
+  <div class="fit-evidence">
+    <section><span class="rationale-label">Seniority</span><p>{{ match.seniority_fit or 'No seniority note recorded.' }}</p></section>
+    <section><span class="rationale-label">Location</span><p>{{ match.location_fit or 'No location note recorded.' }}</p></section>
+  </div>
+  {% if red_flags %}<section><span class="rationale-label">Watch-outs</span><ul>{% for f in red_flags %}<li>{{ f }}</li>{% endfor %}</ul></section>{% endif %}
+  <details class="evaluation-trace">
+    <summary>Evaluation record <span class="disclosure-chevron" aria-hidden="true"></span></summary>
+    <div>
+      {% if prefilter %}<p><strong>Prefilter:</strong> {{ prefilter.verdict }} — {{ prefilter.reason }}</p>{% endif %}
+      <p><strong>Policy inputs:</strong> Career story · search constitution · decision rubric · calibration anchors · feedback summary (<a href="/search-state">view active policy</a>)<br><strong>Model:</strong> {{ match.model or 'not recorded' }}<br><strong>Harness:</strong> {{ match.profile_hash }}<br><strong>Prompt:</strong> {{ match.prompt_version or 'not recorded' }}<br><strong>Evaluated:</strong> {{ match.created_at.strftime('%b %-d, %Y · %-I:%M %p') }}{% if match.cost_usd is not none %}<br><strong>Cost:</strong> ${{ '%.4f'|format(match.cost_usd) }}{% endif %}<br><strong>Trace:</strong> {{ match.langfuse_trace_id if match.langfuse_trace_id else 'External tracing was not configured for this run.' }}</p>
+    </div>
+  </details>
 </article>
 <details>
-  <summary>This recommendation is wrong</summary>
+  <summary>This recommendation misses</summary>
   <form method="post" action="/jobs/{{ job.id }}/feedback">
     <label>My judgment
       <select name="label">
