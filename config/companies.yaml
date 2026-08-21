@@ -66,3 +66,6 @@ companies:
     slugs: [openevidence, open-evidence]
   - name: Clay
     slugs: [claylabs, clay]
+  - name: Ramp
+    slugs: [ramp, ramp-com]  # VERIFY after probe: "ramp" is a generic token — confirm the
+                             # resolved board is Ramp the fintech (ramp.com), not another Ramp
