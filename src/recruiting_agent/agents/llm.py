@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
@@ -43,14 +44,25 @@ async def llm_json(
     schema: dict,
     effort: str | None = None,
     metadata: dict | None = None,
+    tools: list[str] | None = None,
+    allowed_tools: list[str] | None = None,
+    skills: list[str] | None = None,
+    cwd: Path | None = None,
+    max_turns: int = 3,
+    mcp_servers: dict | None = None,
 ) -> LLMResult:
-    """Single-turn, no-tools structured-output call, traced in Langfuse when configured."""
+    """Structured Agent SDK call with explicit capabilities and tracing."""
     options = ClaudeAgentOptions(
         model=model,
         system_prompt=system_prompt,
-        allowed_tools=[],
-        # Structured output consumes an internal tool turn; 1 is too strict.
-        max_turns=3,
+        tools=tools or [],
+        allowed_tools=allowed_tools or [],
+        skills=skills,
+        cwd=cwd,
+        setting_sources=["project"] if cwd else [],
+        mcp_servers=mcp_servers or {},
+        # Structured output consumes an internal tool turn.
+        max_turns=max_turns,
         effort=effort,
         output_format={"type": "json_schema", "schema": schema},
     )

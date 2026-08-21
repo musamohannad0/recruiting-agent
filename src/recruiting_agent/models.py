@@ -107,7 +107,32 @@ class Match(SQLModel, table=True):
     model: str = ""
     prompt_version: str = ""
     langfuse_trace_id: str | None = None
+    cost_usd: float | None = None
     user_status: str | None = Field(default=None, index=True)  # saved | dismissed | applied
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class JobReview(SQLModel, table=True):
+    __tablename__ = "job_reviews"
+
+    id: int | None = Field(default=None, primary_key=True)
+    job_id: int = Field(foreign_key="jobs.id", unique=True, index=True)
+    user_status: str | None = Field(default=None, index=True)
+    updated_at: datetime = Field(default_factory=utcnow)
+
+
+class JobSource(SQLModel, table=True):
+    __tablename__ = "job_sources"
+    __table_args__ = (UniqueConstraint("company_id", "source_type"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    company_id: int = Field(foreign_key="companies.id", index=True)
+    source_type: str
+    config_json: str = "{}"
+    is_authoritative: bool = True
+    status: str = Field(default="active", index=True)
+    last_checked_at: datetime | None = None
+    last_error: str | None = None
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -141,6 +166,99 @@ class Run(SQLModel, table=True):
     langfuse_trace_id: str | None = None
     started_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
+
+
+class CycleStatus(StrEnum):
+    running = "running"
+    success = "success"
+    failed = "failed"
+    skipped = "skipped"
+
+
+class ActionStatus(StrEnum):
+    pending = "pending"
+    running = "running"
+    success = "success"
+    failed = "failed"
+
+
+class AgentCycle(SQLModel, table=True):
+    __tablename__ = "agent_cycles"
+
+    id: int | None = Field(default=None, primary_key=True)
+    trigger: str
+    status: CycleStatus = CycleStatus.running
+    phase: str = "starting"
+    checkpoint_json: str = "{}"
+    stats_json: str = "{}"
+    harness_hash: str = ""
+    error: str | None = None
+    started_at: datetime = Field(default_factory=utcnow)
+    finished_at: datetime | None = None
+
+
+class AgentAction(SQLModel, table=True):
+    __tablename__ = "agent_actions"
+
+    id: int | None = Field(default=None, primary_key=True)
+    cycle_id: int = Field(foreign_key="agent_cycles.id", index=True)
+    idempotency_key: str = Field(unique=True, index=True)
+    kind: str = Field(index=True)
+    target: str = ""
+    status: ActionStatus = ActionStatus.pending
+    attempts: int = 0
+    result_json: str = "{}"
+    error: str | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    finished_at: datetime | None = None
+
+
+class AgentEvent(SQLModel, table=True):
+    __tablename__ = "agent_events"
+
+    id: int | None = Field(default=None, primary_key=True)
+    event_type: str = Field(index=True)
+    entity_type: str | None = None
+    entity_id: str | None = None
+    payload_json: str = "{}"
+    source: str = "system"
+    confidence: float | None = None
+    cycle_id: int | None = Field(default=None, foreign_key="agent_cycles.id", index=True)
+    harness_hash: str = Field(default="", index=True)
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class Feedback(SQLModel, table=True):
+    __tablename__ = "feedback"
+
+    id: int | None = Field(default=None, primary_key=True)
+    job_id: int = Field(foreign_key="jobs.id", index=True)
+    label: str
+    reason: str = ""
+    signal_strength: str = "explicit"
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class MemoryRevision(SQLModel, table=True):
+    __tablename__ = "memory_revisions"
+
+    id: int | None = Field(default=None, primary_key=True)
+    section: str
+    content: str
+    status: str = Field(default="proposed", index=True)
+    source_event_start: int | None = None
+    source_event_end: int | None = None
+    created_at: datetime = Field(default_factory=utcnow)
+    decided_at: datetime | None = None
+
+
+class CoordinatorLease(SQLModel, table=True):
+    __tablename__ = "coordinator_leases"
+
+    id: int = Field(default=1, primary_key=True)
+    token: str | None = None
+    expires_at: datetime | None = None
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 DEFAULT_SETTINGS: dict[str, str] = {

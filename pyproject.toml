@@ -20,6 +20,12 @@ dependencies = [
     "langfuse>=3.0",
 ]
 
+[project.optional-dependencies]
+modal = [
+    "modal>=1.0",
+    "psycopg[binary]>=3.2",
+]
+
 [project.scripts]
 ra = "recruiting_agent.cli:app"
 

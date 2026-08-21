@@ -8,12 +8,20 @@
   <td>
     <a href="/jobs/{{ job.id }}"><strong>{{ job.title }}</strong></a>
     <div class="muted">{{ company.name }} · {{ job.location or "—" }}{% if job.department %} · {{ job.department }}{% endif %}</div>
-    <details>
-      <summary class="rec-{{ match.recommendation }}">{{ match.recommendation }} — {{ match.seniority_fit }}</summary>
-      <div class="reasoning">
-        <p>{{ match.reasoning }}</p>
-        {% if red_flags %}<p><strong>Red flags:</strong></p><ul>{% for f in red_flags %}<li>{{ f }}</li>{% endfor %}</ul>{% endif %}
-        <p class="muted">{{ match.location_fit }}</p>
+    <div class="match-verdict"><span class="rec-{{ match.recommendation }}">{{ match.recommendation }}</span><span>{{ match.seniority_fit }}</span></div>
+    <details class="score-rationale">
+      <summary><span>Why this score</span><span class="disclosure-chevron" aria-hidden="true"></span></summary>
+      <div class="reasoning score-rationale-body">
+        <section><span class="rationale-label">Agent rationale</span><p>{{ match.reasoning }}</p></section>
+        <div class="fit-evidence">
+          <section><span class="rationale-label">Seniority</span><p>{{ match.seniority_fit or 'No seniority note recorded.' }}</p></section>
+          <section><span class="rationale-label">Location</span><p>{{ match.location_fit or 'No location note recorded.' }}</p></section>
+        </div>
+        {% if red_flags %}<section><span class="rationale-label">Watch-outs</span><ul>{% for f in red_flags %}<li>{{ f }}</li>{% endfor %}</ul></section>{% endif %}
+        <footer class="evaluation-record">
+          <span>Model {{ match.model or 'unrecorded' }}</span><span>Harness {{ match.profile_hash[:8] }}</span><span>Prompt {{ match.prompt_version or 'unrecorded' }}</span><span>{{ match.created_at.strftime('%b %-d, %Y · %-I:%M %p') }}</span>{% if match.cost_usd is not none %}<span>${{ '%.3f'|format(match.cost_usd) }}</span>{% endif %}{% if match.langfuse_trace_id %}<span>Trace {{ match.langfuse_trace_id }}</span>{% else %}<span>External trace not configured</span>{% endif %}<a href="/search-state">Policy inputs</a>
+        </footer>
+        <a class="audit-link" href="/jobs/{{ job.id }}">Open full evaluation and correct it →</a>
       </div>
     </details>
   </td>

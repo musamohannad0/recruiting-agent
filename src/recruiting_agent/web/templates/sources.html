@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Source Health</h2>
+<table><thead><tr><th>Company</th><th>Sources</th><th>Last checked</th><th>Error</th></tr></thead><tbody>
+{% for company in companies %}<tr>
+  <td>{{ company.name }}</td>
+  <td>{% for source in by_company.get(company.id, []) %}<div>{{ source.source_type }} · {{ source.status }}{% if not source.is_authoritative %} <span class="muted">(agentic)</span>{% endif %}</div>{% else %}<span class="muted">Not probed</span>{% endfor %}</td>
+  <td class="muted">{% for source in by_company.get(company.id, []) %}{{ source.last_checked_at or '—' }}{% endfor %}</td>
+  <td class="muted">{% for source in by_company.get(company.id, []) %}{{ source.last_error or '' }}{% endfor %}</td>
+</tr>{% endfor %}
+</tbody></table>
+{% endblock %}

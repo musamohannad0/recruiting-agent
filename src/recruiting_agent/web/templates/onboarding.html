@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}Set up your search — Recruiting Agent{% endblock %}
+{% block body_class %}onboarding-body{% endblock %}
+{% set steps = ['resume', 'brief', 'interview', 'company_calibration', 'role_calibration', 'review'] %}
+{% set step_names = ['Resume', 'Search brief', 'Clarify', 'Companies', 'Role judgment', 'Activate'] %}
+{% set current_step = steps.index(stage) if stage in steps else 5 %}
+{% set draft = state.get('search_draft', {}) %}
+{% block layout %}
+<div class="onboarding-shell">
+  <aside class="onboarding-aside">
+    <a href="/onboarding" class="brand"><span>Recruiting Agent</span><small>candidate-owned</small></a>
+    <div class="onboarding-promise">
+      <h1>Set the search policy.</h1>
+      <p>Your answers determine what the agent searches, how it ranks roles, and when it asks for a decision.</p>
+      <div class="step-list" aria-label="Onboarding progress">
+        {% for name in step_names %}
+        <div class="step-item {{ 'done' if loop.index0 < current_step else ('current' if loop.index0 == current_step) }}">
+          <b>{{ '✓' if loop.index0 < current_step else loop.index }}</b><span>{{ name }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="privacy-note"><strong>Local workspace</strong><span>Your resume, preferences, and agent memory stay inside this deployment.</span></div>
+  </aside>
+
+  <main class="onboarding-main">
+    <section class="onboarding-card {{ 'wide' if stage in ['company_calibration', 'role_calibration'] }}">
+      {% if state.get('migration_notice') %}<div class="notice"><span>✓</span><span>{{ state.migration_notice }}</span></div>{% endif %}
+
+      {% if stage == "resume" %}
+      <p class="eyebrow">01 · Evidence</p>
+      <h2>Add background evidence.</h2>
+      <p class="intro">Upload the resume you already use. The agent uses it as supporting evidence, while your answers remain the source of truth for what comes next.</p>
+      <form class="form-card form-stack" method="post" action="/onboarding/resume" enctype="multipart/form-data" data-pending data-pending-label="Uploading" data-pending-message="Resume received — saving it privately.">
+        <label class="upload-zone">
+          <input type="file" name="resume" accept=".pdf,.txt,.md" required>
+          <span class="upload-file-type">PDF / TXT / MD</span>
+          <strong data-upload-name>Choose your resume</strong>
+          <small>PDF, text, or Markdown · up to 10 MB</small>
+        </label>
+        <div class="form-actions"><button class="primary" type="submit" data-pending-label="Uploading">Continue</button></div>
+      </form>
+
+      {% elif stage == "brief" %}
+      <p class="eyebrow">02 · Intent</p>
+      <h2>Describe the search once, clearly.</h2>
+      <p class="intro">This is the source of truth. The agent will only ask a follow-up when the answer could materially change the search.</p>
+      <form class="form-card form-stack" method="post" action="/onboarding/brief" data-pending data-pending-label="Checking your brief" data-pending-message="Brief received — checking for important gaps.">
+        <label>What work do you want to do?
+          <small>Describe responsibilities and working style, not just titles. For example: “FDE or applied AI engineering with a customer feedback loop; technical PM at a small team is possible; pure SWE is not.”</small>
+          <textarea name="role_thesis" rows="4" required>{{ draft.get('role_thesis', '') }}</textarea>
+        </label>
+        <label>What makes the day-to-day compelling?
+          <small>The balance of building, customers, ownership, research, leadership, pace, and team shape.</small>
+          <textarea name="work_style" rows="3">{{ draft.get('work_style', '') }}</textarea>
+        </label>
+        <div class="form-row">
+          <label>Acceptable locations
+            <small>Comma-separated; be explicit about hard boundaries.</small>
+            <input name="locations" value="{{ draft.get('locations', [])|join(', ') }}" placeholder="New York City, San Francisco" required>
+          </label>
+          <label>Remote policy
+            <small>How should remote roles be treated?</small>
+            <select name="remote_policy">
+              {% for value, label in [('onsite_or_hybrid','Onsite or hybrid in my locations'),('us_remote','US remote is also good'),('remote_first','Prioritize remote-first'),('flexible','Flexible for the right role')] %}
+              <option value="{{ value }}" {{ 'selected' if draft.get('remote_policy', 'onsite_or_hybrid') == value }}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label>Company stage and ownership
+            <small>Examples: private only, seed through Series G, public is acceptable.</small>
+            <input name="company_stages" value="{{ draft.get('company_stages', [])|join(', ') }}" placeholder="Private preferred, seed through late stage">
+          </label>
+          <label>Verticals that pull you in
+            <small>Examples: LLM labs, applied AI, healthcare—or “broadly open.”</small>
+            <input name="verticals" value="{{ draft.get('verticals', [])|join(', ') }}" placeholder="LLM labs, applied AI">
+          </label>
+        </div>
+        <label>What makes a company exciting?
+          <small>Mission, technical ambition, stage, people, pace, market, or something else. This ranks the initial company universe.</small>
+          <textarea name="company_preferences" rows="3">{{ draft.get('company_preferences', '') }}</textarea>
+        </label>
+        <div class="form-row">
+          <label>Verticals to exclude
+            <small>Leave blank if you are broadly open.</small>
+            <input name="excluded_verticals" value="{{ draft.get('excluded_verticals', [])|join(', ') }}" placeholder="Gambling, ad-tech">
+          </label>
+          <label>Stretch appetite
+            <small>How should reach roles rank against clean fits?</small>
+            <select name="stretch">
+              <option value="reach" {{ 'selected' if draft.get('stretch') == 'reach' }}>Prioritize reach roles</option>
+              <option value="balanced" {{ 'selected' if draft.get('stretch', 'balanced') == 'balanced' }}>Balance reach and clean fits</option>
+              <option value="safe" {{ 'selected' if draft.get('stretch') == 'safe' }}>Prioritize demonstrated fit</option>
+            </select>
+          </label>
+        </div>
+        <label>Any other hard exclusions?
+          <small>Role patterns, travel limits, compensation boundaries, or company types that should never be surfaced.</small>
+          <input name="hard_exclusions" value="{{ draft.get('hard_exclusions', '') }}" placeholder="No quota-carrying roles; no relocation outside NYC/SF">
+        </label>
+        <div class="form-row">
+          <label>Strong opportunities per week
+            <small>The search is calibrated to this review budget.</small>
+            <input name="weekly_cadence" type="number" min="1" max="50" value="{{ draft.get('weekly_cadence', '10') }}">
+          </label>
+          <label>Discovery boundary
+            <small>Exploratory suggestions always wait for your approval.</small>
+            <select name="company_scope">
+              <option value="exploratory" {{ 'selected' if draft.get('company_scope', 'exploratory') == 'exploratory' }}>Explore adjacent companies</option>
+              <option value="strict" {{ 'selected' if draft.get('company_scope') == 'strict' }}>Only search approved companies</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-actions"><button class="primary" type="submit" data-pending-label="Checking your brief">Check for gaps</button></div>
+      </form>
+
+      {% elif stage == "interview" %}
+      <p class="eyebrow">03 · Clarify</p>
+      {% if question %}
+        {% set question_text = question.question if question is mapping else question %}
+        {% set question_topic = question.topic if question is mapping else 'clarification' %}
+        <h2>One thing could sharpen the search.</h2>
+        <p class="intro">This is about your ranking policy—not your resume history. You can skip if your brief already says enough.</p>
+        <div class="question-card">
+          <span class="pill">{{ question_topic|replace('_', ' ') }}</span>
+          <h3>{{ question_text }}</h3>
+          {% if question is mapping and question.reason %}<p class="question-reason"><strong>Why this matters:</strong> {{ question.reason }}</p>{% endif %}
+          <form class="form-stack" method="post" action="/onboarding/interview" data-pending data-pending-label="Saving answer" data-pending-message="Answer received — updating the search brief.">
+            <input type="hidden" name="question" value="{{ question_text }}">
+            <input type="hidden" name="topic" value="{{ question_topic }}">
+            <textarea name="answer" rows="4" required autofocus placeholder="Your answer…"></textarea>
+            <div class="form-actions">
+              <button class="secondary" type="submit" form="finish-interview">My brief covers this</button>
+              <button class="primary" type="submit" data-pending-label="Answer received">Save answer</button>
+            </div>
+          </form>
+          <form id="finish-interview" method="post" action="/onboarding/interview/finish" data-pending data-pending-message="Got it — building your company universe now."></form>
+        </div>
+      {% else %}
+        <div class="form-card thinking" data-onboarding-poll data-stage="{{ stage }}">
+          <div><span class="pill">Brief analysis</span><h3>Checking for material gaps</h3><p>{{ state.get('generation', {}).get('message') or 'Checking whether any clarification would materially change the search.' }}</p></div>
+          <span class="inline-status"><span class="spinner" style="color:var(--blue)"></span>This usually takes a few seconds</span>
+        </div>
+      {% endif %}
+
+      {% elif stage == "company_calibration" %}
+      <p class="eyebrow">04 · Company universe</p>
+      <h2>Start broad. Cut what’s wrong.</h2>
+      <p class="intro">The initial 40-company set is ranked from your brief. Everything starts included—remove misses, mark priorities, or add anything absent.</p>
+      <form method="post" action="/onboarding/companies" data-pending data-pending-label="Saving 40-company universe" data-pending-message="Company universe received — generating role calibration." data-company-curation>
+        <div class="company-toolbar">
+          <input type="search" data-company-filter placeholder="Filter 40 companies…" aria-label="Filter companies">
+          <div><span class="selection-count" data-selection-count>40 selected</span> <button class="ghost small" type="button" data-bulk="all">Include shown</button><button class="ghost small" type="button" data-bulk="none">Remove shown</button></div>
+        </div>
+        {% for category, companies in state.get('company_candidates', [])|groupby('category') %}
+        <section class="company-group">
+          <div class="company-group-header"><h3>{{ category }}</h3><span class="muted">{{ companies|length }} companies</span></div>
+          <div class="company-grid">
+          {% for company in companies %}
+            <article class="company-card" data-company-card data-search="{{ (company.name ~ ' ' ~ company.category ~ ' ' ~ company.rationale)|lower }}">
+              <div class="company-card-top">
+                <div><h4>{{ company.name }}</h4><div class="company-meta"><span>{{ company.stage }}</span><span>·</span><span>{{ company.category }}</span></div></div>
+                <div class="company-controls">
+                  <label class="check-control priority-control" title="Prioritize this company"><input type="checkbox" name="priority" value="{{ company.name }}" {{ 'checked' if company.priority }}> Priority</label>
+                  <label class="check-control"><input type="checkbox" name="included" value="{{ company.name }}" {{ 'checked' if company.included }}> Keep</label>
+                </div>
+              </div>
+              <p>{{ company.rationale }}</p>
+            </article>
+          {% endfor %}
+          </div>
+        </section>
+        {% endfor %}
+        <div class="manual-add">
+          <label>Add a company
+            <small>Enter names separated by commas. The first run will locate and verify their career sources.</small>
+            <input name="additions" placeholder="Company one, Company two">
+          </label>
+        </div>
+        <fieldset>
+          <legend class="eyebrow">Ongoing discovery</legend>
+          <div class="scope-choice">
+            <label class="scope-option"><input type="radio" name="scope" value="exploratory" {{ 'checked' if draft.get('company_scope', 'exploratory') == 'exploratory' }}><span><strong>Find adjacent companies</strong><small>New companies stay pending until you approve them.</small></span></label>
+            <label class="scope-option"><input type="radio" name="scope" value="strict" {{ 'checked' if draft.get('company_scope') == 'strict' }}><span><strong>Keep the boundary strict</strong><small>Only search the companies selected here.</small></span></label>
+          </div>
+        </fieldset>
+        <div class="form-actions"><button class="primary" type="submit" data-pending-label="Saving your universe">Calibrate role judgment</button></div>
+      </form>
+
+      {% elif stage == "role_calibration" %}
+      <p class="eyebrow">05 · Judgment</p>
+      <h2>Teach the edges, not the title.</h2>
+      <p class="intro">Your target work is already captured. Label these contrasting situations so the scoring policy changes at the right edges.</p>
+      <form class="form-stack" method="post" action="/onboarding/roles" data-pending data-pending-label="Learning your judgment" data-pending-message="Calibration received — assembling your search constitution.">
+        <div class="role-stack">
+        {% for card in state.get('role_cards', []) %}
+          <article class="role-card">
+            <div><h3>{{ card.title }}</h3><div class="role-subtitle">{{ card.subtitle }}</div><p>{{ card.description }}</p><div class="role-context">{{ card.context }} · Initial classification: {{ card.prediction }}</div></div>
+            <div class="segmented" role="radiogroup" aria-label="Rate {{ card.title }}">
+              {% for value, label in [('excited','Excited'),('consider','Consider'),('pass','Pass')] %}
+              <label><input type="radio" name="rating_{{ card.id }}" value="{{ value }}" {{ 'checked' if card.prediction == value }}><span>{{ label }}</span></label>
+              {% endfor %}
+            </div>
+          </article>
+        {% endfor %}
+        </div>
+        <div class="form-actions"><button class="primary" type="submit" data-pending-label="Saving role policy">Review search policy</button></div>
+      </form>
+
+      {% elif stage == "review" %}
+      <p class="eyebrow">06 · Activate</p>
+      <h2>Review the search policy.</h2>
+      <p class="intro">This is the durable policy used for discovery and evaluation. The resume supports fit; these choices govern intent.</p>
+      <div class="form-card">
+        <div class="review-grid">
+          <section class="review-section full"><h3>Role thesis</h3><p>{{ draft.get('role_thesis') }}</p><p class="muted">{{ draft.get('work_style') }}</p></section>
+          <section class="review-section"><h3>Geography</h3><p>{{ draft.get('locations', [])|join(' · ') }}</p><p class="muted">{{ draft.get('remote_policy', '')|replace('_', ' ') }}</p></section>
+          <section class="review-section"><h3>Company scope</h3><p>{{ state.company_calibration.excited|length + state.company_calibration.acceptable|length }} approved</p><p class="muted">{{ state.company_calibration.scope }} · {{ state.company_calibration.excited|length }} priorities</p></section>
+          <section class="review-section"><h3>Company preference</h3><p>{{ draft.get('company_preferences') or 'Broadly open' }}</p><p class="muted">{{ draft.get('company_stages', [])|join(', ') }}</p></section>
+          <section class="review-section"><h3>Ranking</h3><p>{{ draft.get('stretch', 'balanced')|title }} stretch appetite</p><p class="muted">{{ draft.get('weekly_cadence', '10') }} strong opportunities per week</p></section>
+          <section class="review-section full"><h3>Hard exclusions</h3><p>{{ draft.get('hard_exclusions') or 'None supplied.' }}</p><p class="muted">Excluded verticals: {{ draft.get('excluded_verticals', [])|join(', ') or 'none' }}</p></section>
+        </div>
+        <div class="notice" style="margin-top:1rem"><span class="status-dot"></span><span>Activation starts source discovery, job ingestion, and matching. The next screen shows progress and any failures.</span></div>
+        <div class="form-actions">
+          <form method="post" action="/onboarding/edit/brief" data-pending data-pending-message="Opening your brief with everything preserved."><button class="secondary" type="submit" data-pending-label="Opening brief">Edit brief</button></form>
+          <form method="post" action="/onboarding/activate" data-pending data-pending-label="Activating search" data-pending-message="Search activated — starting the first run."><button class="primary" type="submit" data-pending-label="Activating search">Activate search</button></form>
+        </div>
+      </div>
+      {% endif %}
+    </section>
+  </main>
+</div>
+{% endblock %}

@@ -30,7 +30,14 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
 
     init_db()
     profile = load_profile()
-    totals = {"prefiltered": 0, "plausible": 0, "rejected": 0, "scored": 0, "score_errors": 0}
+    totals = {
+        "prefiltered": 0,
+        "plausible": 0,
+        "rejected": 0,
+        "scored": 0,
+        "score_errors": 0,
+        "cost_usd": 0.0,
+    }
 
     with get_session() as session:
         with track_run(session, RunKind.match) as handle:
@@ -165,9 +172,11 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
                             model=settings.scoring_model,
                             prompt_version=PROMPT_VERSION,
                             langfuse_trace_id=result.trace_id,
+                            cost_usd=result.cost_usd,
                         )
                     )
                     totals["scored"] += 1
+                    totals["cost_usd"] += result.cost_usd or 0
                     if data["score"] >= 75:
                         typer.echo(
                             f"  ★ {data['score']} {companies.get(job.company_id)} — {job.title}"

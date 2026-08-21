@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 import typer
 from sqlmodel import select
 
 from ..db import get_session, init_db
-from ..models import AtsType, Company
+from ..models import AtsType, Company, CompanyStatus, JobSource
 from ..seed import load_company_config, slug_candidates
 from .registry import CONNECTORS
 
@@ -30,7 +31,7 @@ async def probe_companies(name: str | None = None, force: bool = False) -> None:
     config_by_name = {entry["name"]: entry for entry in load_company_config()}
 
     with get_session() as session:
-        query = select(Company)
+        query = select(Company).where(Company.status == CompanyStatus.active)
         if name:
             query = query.where(Company.name == name)
         companies = session.exec(query).all()
@@ -50,4 +51,18 @@ async def probe_companies(name: str | None = None, force: bool = False) -> None:
                 company.board_token = None
                 typer.echo(f"✗ {company.name}: no supported ATS found (workday/custom?)")
             session.add(company)
+            session.commit()
+            source_type = company.ats_type.value if company.ats_type != AtsType.unsupported else "career_site"
+            source = session.exec(
+                select(JobSource).where(
+                    JobSource.company_id == company.id,
+                    JobSource.source_type == source_type,
+                )
+            ).first()
+            if source is None:
+                source = JobSource(company_id=company.id, source_type=source_type)
+            source.config_json = json.dumps({"board_token": company.board_token}) if company.board_token else "{}"
+            source.is_authoritative = company.ats_type != AtsType.unsupported
+            source.status = "active" if company.board_token else "needs_configuration"
+            session.add(source)
             session.commit()

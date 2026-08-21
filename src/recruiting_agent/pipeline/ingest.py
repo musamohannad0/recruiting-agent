@@ -9,7 +9,13 @@ from ..db import get_session, init_db
 from ..models import AtsType, Company, CompanyStatus, Job, RunKind, utcnow
 
 
-def upsert_jobs(session: Session, company: Company, postings: list[JobPosting]) -> dict:
+def upsert_jobs(
+    session: Session,
+    company: Company,
+    postings: list[JobPosting],
+    *,
+    deactivate_missing: bool = True,
+) -> dict:
     """Insert new postings, refresh seen ones, deactivate vanished ones."""
     existing = {
         j.external_id: j
@@ -53,7 +59,7 @@ def upsert_jobs(session: Session, company: Company, postings: list[JobPosting]) 
             session.add(row)
 
     for external_id, row in existing.items():
-        if external_id not in seen_ids and row.is_active:
+        if deactivate_missing and external_id not in seen_ids and row.is_active:
             row.is_active = False
             session.add(row)
             stats["deactivated"] += 1

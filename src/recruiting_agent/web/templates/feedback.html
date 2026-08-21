@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Explicit Feedback</h2>
+<table><thead><tr><th>Role</th><th>Label</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>
+{% for item, job, company in rows %}<tr><td><a href="/jobs/{{ job.id }}">{{ job.title }}</a><div class="muted">{{ company.name }}</div></td><td>{{ item.label }}</td><td>{{ item.reason }}</td><td class="muted">{{ item.created_at.strftime('%Y-%m-%d') }}</td></tr>{% endfor %}
+</tbody></table>
+{% endblock %}
