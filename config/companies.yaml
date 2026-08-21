@@ -40,8 +40,6 @@ companies:
   - name: Edison Scientific
     slugs: ["Edison Scientific"]
   - name: Neuralink
-  - name: Outtake
-    slugs: [outtake, outtakeai, outtake-ai]
   - name: VoltAI
     slugs: [voltai.careers]  # lever/voltai is a different Volt
   - name: Genesis
