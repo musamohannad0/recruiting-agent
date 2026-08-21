@@ -1,4 +1,5 @@
 from contextlib import contextmanager
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -114,6 +115,43 @@ async def test_held_lease_skips_overlapping_cycle(tmp_path, session_factory):
 
     assert result == {"status": "skipped", "reason": "coordinator lease held"}
     coordinator._release_lease("already-running")
+
+
+@pytest.mark.asyncio
+async def test_long_action_renews_lease_and_blocks_overlap(tmp_path, session_factory):
+    gate = asyncio.Event()
+
+    async def slow_probe():
+        await gate.wait()
+        return {"ok": True}
+
+    first_operations = fake_operations([])
+    first_operations.probe = slow_probe
+    first = SearchCoordinator(
+        ready_workspace(tmp_path),
+        session_factory,
+        first_operations,
+        lease_minutes=0.001,
+        lease_heartbeat_seconds=0.01,
+        initialize=lambda: None,
+    )
+    second = SearchCoordinator(
+        ready_workspace(tmp_path),
+        session_factory,
+        fake_operations([]),
+        lease_minutes=0.001,
+        lease_heartbeat_seconds=0.01,
+        initialize=lambda: None,
+    )
+
+    running = asyncio.create_task(first.run_cycle("long-running"))
+    await asyncio.sleep(0.09)  # Past the original 60 ms lease, while heartbeats continue.
+
+    overlap = await second.run_cycle("overlap")
+
+    assert overlap == {"status": "skipped", "reason": "coordinator lease held"}
+    gate.set()
+    assert (await running)["status"] == "success"
 
 
 @pytest.mark.asyncio

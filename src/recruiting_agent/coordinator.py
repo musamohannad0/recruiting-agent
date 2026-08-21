@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import json
 import traceback
 import uuid
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, ContextManager
@@ -77,7 +79,8 @@ class SearchCoordinator:
     candidate_workspace: CandidateWorkspace = field(default_factory=lambda: workspace)
     session_factory: SessionFactory = get_session
     operations: CoordinatorOperations = field(default_factory=CoordinatorOperations)
-    lease_minutes: int = 90
+    lease_minutes: float = 90
+    lease_heartbeat_seconds: float = 30.0
     now: Callable[[], datetime] = utcnow
     initialize: Callable[[], None] = init_db
 
@@ -92,9 +95,12 @@ class SearchCoordinator:
         if not self._acquire_lease(token):
             return {"status": CycleStatus.skipped.value, "reason": "coordinator lease held"}
 
-        cycle = self._start_cycle(trigger)
+        heartbeat_stop = asyncio.Event()
+        heartbeat = asyncio.create_task(self._heartbeat_lease(token, heartbeat_stop))
+        cycle: AgentCycle | None = None
         stats: dict[str, Any] = {"actions": {}, "trigger": trigger}
         try:
+            cycle = self._start_cycle(trigger)
             cadence = self._load_cadence()
             scope = self._company_scope()
             action_specs: list[tuple[str, str, Operation]] = [
@@ -138,15 +144,22 @@ class SearchCoordinator:
             self._finish_cycle(cycle.id, CycleStatus.success, stats=stats)
             return {"status": CycleStatus.success.value, "cycle_id": cycle.id, **stats}
         except Exception as exc:
-            self._finish_cycle(
-                cycle.id,
-                CycleStatus.failed,
-                stats=stats,
-                error=f"{exc}\n{traceback.format_exc(limit=5)}",
-            )
+            if cycle is not None:
+                self._finish_cycle(
+                    cycle.id,
+                    CycleStatus.failed,
+                    stats=stats,
+                    error=f"{exc}\n{traceback.format_exc(limit=5)}",
+                )
             raise
         finally:
-            self._release_lease(token)
+            heartbeat_stop.set()
+            heartbeat.cancel()
+            try:
+                with suppress(asyncio.CancelledError):
+                    await heartbeat
+            finally:
+                self._release_lease(token)
 
     def _acquire_lease(self, token: str) -> bool:
         now = self.now()
@@ -175,6 +188,28 @@ class SearchCoordinator:
                 .values(token=None, expires_at=None, updated_at=self.now())
             )
             session.commit()
+
+    def _renew_lease(self, token: str) -> bool:
+        now = self.now()
+        with self.session_factory() as session:
+            result = session.exec(
+                update(CoordinatorLease)
+                .where(CoordinatorLease.id == 1, CoordinatorLease.token == token)
+                .values(
+                    expires_at=now + timedelta(minutes=self.lease_minutes),
+                    updated_at=now,
+                )
+            )
+            session.commit()
+            return bool(result.rowcount)
+
+    async def _heartbeat_lease(self, token: str, stop: asyncio.Event) -> None:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=self.lease_heartbeat_seconds)
+            except TimeoutError:
+                if not self._renew_lease(token):
+                    raise RuntimeError("coordinator lease was lost during an active cycle")
 
     def _start_cycle(self, trigger: str) -> AgentCycle:
         with self.session_factory() as session:
