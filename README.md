@@ -1,66 +1,126 @@
 # recruiting-agent
 
-A long-running personal recruiting agent. Each clone or deployment belongs to one
-candidate and develops a private, calibrated search harness over time.
+A self-hosted, long-running recruiting agent for one candidate. Each clone or
+deployment owns one private search workspace—there is no OIDC or multi-user account
+layer.
 
-## How it works
+The agent continuously collects roles, evaluates them against a candidate-specific
+harness, records what it did, and asks for approval before changing durable policy or
+expanding the company universe. Applications remain manual.
 
-On first launch, the dashboard asks for a resume, conducts a brief adaptive
-interview, calibrates company and role judgment, and writes a private gitignored
-`workspace/`. The uploaded resume remains intact; the interview agent inspects the
-file and asks decision-relevant follow-ups.
+## Candidate onboarding
 
-The active search then runs as bounded, restartable cycles:
+First launch redirects to a resumable onboarding flow:
 
-```text
-wake → ingest → prefilter → score → consolidate memory → digest → checkpoint
-```
+1. Upload the resume you already use (`.pdf`, `.txt`, or `.md`). The file is preserved
+   for the agent to inspect; the application does not attempt to normalize it into a
+   brittle resume schema.
+2. Describe target work, working style, locations, company stage, verticals, hard
+   exclusions, and review cadence.
+3. Answer only the follow-up questions that could materially change the search.
+4. Start from a ranked 40-company set, then remove misses, mark priorities, and add
+   companies the agent missed.
+5. Calibrate role judgment on contrasting edge cases.
+6. Review the resulting policy and activate the first search.
 
-- Greenhouse, Lever, and Ashby connectors ingest authoritative job boards.
-- Candidate-specific behavior comes from the workspace search constitution,
-  decision rubric, company thesis, calibration anchors, and approved memory.
-- Job content and complete harness hashes prevent unnecessary re-evaluation.
-- An immutable event history and idempotent actions make cycles safe to retry.
-- Explicit corrections can propose memory changes, but policy changes require
-  candidate approval.
-- Company discovery follows `strict` or `exploratory` scope and never activates a
-  suggestion automatically.
+Onboarding writes a gitignored `workspace/` containing the candidate context, search
+constitution, decision rubric, company thesis, calibration anchors, cadence, approved
+memory, and a versioned manifest. The complete workspace becomes the harness hash used
+to select current scores and invalidate stale evaluations.
 
-## Setup
+## Local setup
+
+Requirements: Python 3.12, [`uv`](https://docs.astral.sh/uv/), and either an authenticated
+Claude CLI or `ANTHROPIC_API_KEY`.
 
 ```bash
 uv sync
-cp .env.example .env       # optional API/tracing configuration
-uv run ra serve            # http://127.0.0.1:8000
+cp .env.example .env       # optional API and Langfuse configuration
+uv run ra serve            # dashboard at http://127.0.0.1:8000
 ```
 
-Complete onboarding in the browser, then resolve and ingest the approved company
-sources:
+Complete onboarding in the dashboard. Activation starts the first bounded search cycle
+immediately. For ongoing local operation, keep the scheduler in a separate terminal:
 
 ```bash
-uv run ra probe
-uv run ra run-cycle
-uv run ra worker           # persistent local scheduler, separate from the web app
+uv run ra worker
 ```
 
-For an existing checkout, `uv run ra import-legacy` copies the old tracked profile
-and company list into the private workspace before onboarding continues.
+The web process never owns the scheduler, so restarting `ra serve` does not start a
+search or create competing cycles. Run exactly one worker per deployment. The worker's
+first check occurs about 30 minutes after it starts; use the command below when an
+immediate manual wake is desired:
+
+```bash
+uv run ra run-cycle --trigger manual
+```
+
+For an older checkout, `uv run ra import-legacy` copies the tracked profile and company
+configuration into the private workspace before onboarding continues.
+
+## Search cadence
+
+The worker wakes every 30 minutes. Idempotency keys and a renewable persisted lease
+prevent duplicate work and overlapping long cycles. The candidate's
+`workspace/policy/cadence.yaml` controls when each action is actually due:
+
+| Work | Local default |
+| --- | ---: |
+| Supported ATS ingestion and role matching | Every 2 hours |
+| Source verification and unsupported-site scouting | Daily |
+| Exploratory company discovery | Weekly |
+| Memory consolidation | Weekly |
+| Recalibration proposal | After 5 explicit corrections |
+
+Greenhouse, Lever, and Ashby are authoritative connectors. Unsupported career sites are
+scouted separately. Exploratory company suggestions remain pending until approved.
+
+## How a cycle stays coherent
+
+```text
+wake → acquire/renew lease → load checkpoint → run due idempotent actions
+     → validate events → consolidate memory → prepare briefing → checkpoint
+```
+
+- General-purpose agents receive task-specific tools and skills plus the active candidate
+  harness; system prompts remain candidate-neutral.
+- Job content and complete harness hashes prevent unnecessary re-evaluation.
+- Actions, events, feedback, reviews, source health, and memory revisions are persisted in
+  version-migrated SQLite locally.
+- Candidate memory and policy live as inspectable Markdown/YAML files in `workspace/`.
+- Policy-changing memory revisions require approval; the append-only search journal can
+  be consolidated automatically. Hard constraints are not silently rewritten.
+- A job review survives rescoring, while the dashboard shows only the latest score for the
+  active harness.
+
+## Dashboard and evaluation evidence
+
+The dashboard includes Today, Matches, Companies, Agent Activity, Search Policy, Memory
+Revisions, Feedback, Source Health, all jobs, and run history.
+
+Matches are ordered by score descending. Open **Why this score** to inspect the stored
+rationale, seniority/location evidence, watch-outs, model, harness, prompt version,
+timestamp, cost, and trace availability. The job page exposes the full evaluation record
+and a correction form. Optional Langfuse tracing is enabled only when its keys are present
+in `.env`.
 
 ## Useful commands
 
 ```bash
-uv run ra ingest
-uv run ra match
-uv run ra discover
-uv run ra run-cycle --trigger manual
-uv run pytest
+uv run ra probe             # identify supported ATS sources
+uv run ra ingest            # fetch openings from active sources
+uv run ra match             # evaluate unevaluated roles for the active harness
+uv run ra discover          # propose adjacent companies
+uv run ra run-cycle         # one bounded coordinator wake
+uv run pytest               # full test suite
 ```
 
-The dashboard exposes Today, Matches, Companies, Search State, Agent Activity,
-Memory Revisions, Feedback, and Source Health. It remains a manual decision tool;
-the agent does not apply to jobs or contact anyone.
+Local state defaults to `data/app.db`; candidate files default to `workspace/`. Both are
+private deployment state and should be backed up together.
 
-Every scheduled task reconstructs coherence from the approved harness, event
-history, and checkpoint. It does not depend on one indefinitely running model
-conversation. See [`docs/modal.md`](docs/modal.md) for the optional bespoke Modal
-deployment scaffold.
+## Modal-ready deployment
+
+[`docs/modal.md`](docs/modal.md) describes the optional Modal scaffold: an ASGI endpoint,
+bounded Cron coordinator ticks, PostgreSQL for concurrent state, a single-writer Modal
+Volume for the candidate workspace, secrets, and proxy-token protection. Modal support is
+scaffolding only and is not deployed automatically.
