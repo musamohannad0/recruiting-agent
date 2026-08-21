@@ -73,10 +73,16 @@ def test_match_list_uses_latest_score_and_job_level_review_state(tmp_path, monke
 
         rows = web_module._match_rows(session, status="dismissed")
 
+        # The newest evaluation wins, not the highest one ever recorded.
         assert len(rows) == 1
-        assert rows[0][0].score == 55
-        assert rows[0][0].user_status == "dismissed"
+        assert rows[0].match.score == 55
+        assert rows[0].review_status == "dismissed"
         assert web_module._match_rows(session, min_score=60, status="dismissed") == []
 
         ranked = web_module._match_rows(session, min_score=0, status="all")
-        assert [row[0].score for row in ranked] == [82, 55]
+        assert [row.match.score for row in ranked] == [82, 55]
+
+        # A dismissed job stays out of the `new` queue across re-scores.
+        assert [row.job.id for row in web_module._match_rows(session, status="new")] == [
+            stronger_job.id
+        ]

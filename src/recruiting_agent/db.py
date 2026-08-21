@@ -6,7 +6,7 @@ from typing import Iterator
 from sqlalchemy import event, inspect as sqlalchemy_inspect, text
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from .models import CoordinatorLease, DEFAULT_SETTINGS, JobReview, Match, Setting
+from .models import CoordinatorLease, DEFAULT_SETTINGS, JobReview, Setting
 from .settings import settings
 
 settings.data_dir.mkdir(parents=True, exist_ok=True)
@@ -51,22 +51,30 @@ def _run_migrations() -> None:
             for row in session.exec(text("SELECT version FROM schema_migrations")).all()
         }
         if 1 not in applied:
-            # Preserve the newest historical triage state before Match.user_status is retired.
-            seen_jobs: set[int] = set()
-            matches = session.exec(
-                select(Match)
-                .where(Match.user_status.is_not(None))
-                .order_by(Match.created_at.desc())
-            ).all()
-            for match in matches:
-                if match.job_id in seen_jobs:
-                    continue
-                seen_jobs.add(match.job_id)
-                existing_review = session.exec(
-                    select(JobReview).where(JobReview.job_id == match.job_id)
-                ).first()
-                if existing_review is None:
-                    session.add(JobReview(job_id=match.job_id, user_status=match.user_status))
+            # Preserve the newest historical triage state before Match.user_status is
+            # retired. Addressed with raw SQL, not the ORM: `user_status` is gone from
+            # the model, and a migration must keep working against the schema as it was.
+            match_columns = {
+                column["name"]
+                for column in sqlalchemy_inspect(session.connection()).get_columns("matches")
+            }
+            if "user_status" in match_columns:
+                rows = session.exec(
+                    text(
+                        "SELECT job_id, user_status FROM matches "
+                        "WHERE user_status IS NOT NULL ORDER BY created_at DESC"
+                    )
+                ).all()
+                seen_jobs: set[int] = set()
+                for job_id, user_status in rows:
+                    if job_id in seen_jobs:
+                        continue
+                    seen_jobs.add(job_id)
+                    existing = session.exec(
+                        select(JobReview).where(JobReview.job_id == job_id)
+                    ).first()
+                    if existing is None:
+                        session.add(JobReview(job_id=job_id, user_status=user_status))
             session.exec(
                 text(
                     "INSERT INTO schema_migrations(version, applied_at) "
@@ -84,6 +92,48 @@ def _run_migrations() -> None:
                 text(
                     "INSERT INTO schema_migrations(version, applied_at) "
                     "VALUES (2, CURRENT_TIMESTAMP)"
+                )
+            )
+        if 3 not in applied:
+            # Per-action and per-cycle spend accounting, so a run's cost is inspectable
+            # instead of only being printed once to a terminal that has since scrolled.
+            accounting = {
+                "cost_usd": "REAL NOT NULL DEFAULT 0",
+                "llm_calls": "INTEGER NOT NULL DEFAULT 0",
+                "input_tokens": "INTEGER NOT NULL DEFAULT 0",
+                "output_tokens": "INTEGER NOT NULL DEFAULT 0",
+                "cached_tokens": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for table in ("agent_cycles", "agent_actions"):
+                # Re-inspect per table: the previous iteration may have altered the schema.
+                existing = {
+                    column["name"]
+                    for column in sqlalchemy_inspect(session.connection()).get_columns(table)
+                }
+                for name, ddl in accounting.items():
+                    if name not in existing:
+                        session.exec(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
+            session.exec(
+                text(
+                    "INSERT INTO schema_migrations(version, applied_at) "
+                    "VALUES (3, CURRENT_TIMESTAMP)"
+                )
+            )
+        if 4 not in applied:
+            # profile_hash is filtered on every match query and every skip-set build;
+            # user_status on matches is retired and its index only costs write time.
+            for statement in (
+                "CREATE INDEX IF NOT EXISTS ix_matches_profile_hash ON matches (profile_hash)",
+                "CREATE INDEX IF NOT EXISTS ix_matches_created_at ON matches (created_at)",
+                "CREATE INDEX IF NOT EXISTS ix_prefilters_profile_hash ON prefilters (profile_hash)",
+                "CREATE INDEX IF NOT EXISTS ix_feedback_created_at ON feedback (created_at)",
+                "DROP INDEX IF EXISTS ix_matches_user_status",
+            ):
+                session.exec(text(statement))
+            session.exec(
+                text(
+                    "INSERT INTO schema_migrations(version, applied_at) "
+                    "VALUES (4, CURRENT_TIMESTAMP)"
                 )
             )
         session.commit()

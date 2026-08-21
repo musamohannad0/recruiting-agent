@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     prefilter_model: str = "claude-haiku-4-5"
     scoring_model: str = "claude-sonnet-5"
     discovery_model: str = "claude-sonnet-5"
+    # Used when the primary model is overloaded; blank disables the fallback.
+    fallback_model: str = ""
+
+    # LLM call behaviour
+    llm_max_attempts: int = 3  # total attempts per call, transient failures only
+    max_call_budget_usd: float | None = None  # hard per-call spend ceiling
+    scoring_concurrency: int = 6
+    prefilter_concurrency: int = 4
+    prefilter_batch_size: int = 25
 
     # Langfuse (tracing skipped when keys unset)
     langfuse_public_key: str = ""

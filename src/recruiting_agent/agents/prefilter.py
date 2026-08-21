@@ -13,7 +13,6 @@ likely substance of the work. Reject only when the limited posting metadata clea
 violates an explicit constraint; otherwise mark the role plausible. Return a verdict
 for every input index in order."""
 
-BATCH_SIZE = 25
 
 SCHEMA = {
     "type": "object",

@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import json
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import or_
 from sqlmodel import func, select
 
 from ..db import get_session, get_setting, init_db, set_setting
@@ -29,11 +31,25 @@ from ..models import (
     Run,
     utcnow,
 )
+from ..reporting import (
+    ACTION_KINDS,
+    action_title,
+    elapsed_seconds,
+    format_duration,
+    format_money,
+    humanize_key,
+    parse_payload,
+    payload_facts,
+    render_markdown,
+    summarize_action,
+)
 from ..workspace import OnboardingStage, workspace
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 STATIC_DIR = Path(__file__).parent / "static"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+# `| markdown` is safe to mark safe: render_markdown escapes embedded raw HTML.
+templates.env.filters["markdown"] = render_markdown
 
 
 @asynccontextmanager
@@ -242,16 +258,35 @@ def onboarding_activate(background_tasks: BackgroundTasks):
     return RedirectResponse("/getting-started", status_code=303)
 
 
-@app.get("/getting-started", response_class=HTMLResponse)
-def getting_started(request: Request):
+def _boot_state() -> tuple[AgentCycle | None, list[AgentAction], int, dict]:
     with get_session() as session:
         cycle = session.exec(select(AgentCycle).order_by(AgentCycle.started_at.desc())).first()
         actions = (
-            session.exec(select(AgentAction).where(AgentAction.cycle_id == cycle.id).order_by(AgentAction.id)).all()
+            session.exec(
+                select(AgentAction).where(AgentAction.cycle_id == cycle.id).order_by(AgentAction.id)
+            ).all()
             if cycle
             else []
         )
         jobs_count = session.exec(select(func.count()).select_from(Job)).one()
+    payload = {
+        "cycle": (
+            {"status": _activity_status(cycle.status), "phase": cycle.phase, "error": cycle.error}
+            if cycle
+            else None
+        ),
+        "actions": [
+            {"kind": item.kind, "status": _activity_status(item.status), "error": item.error}
+            for item in actions
+        ],
+        "jobs": jobs_count,
+    }
+    return cycle, actions, jobs_count, payload
+
+
+@app.get("/getting-started", response_class=HTMLResponse)
+def getting_started(request: Request):
+    cycle, actions, jobs_count, payload = _boot_state()
     return render(
         request,
         "getting_started.html",
@@ -259,26 +294,15 @@ def getting_started(request: Request):
         cycle=cycle,
         actions=actions,
         jobs_count=jobs_count,
+        # Seed the poll with the state that was actually rendered; an empty signature
+        # meant the first change after page load was recorded instead of shown.
+        boot_signature=json.dumps(payload),
     )
 
 
 @app.get("/getting-started/status")
 def getting_started_status():
-    with get_session() as session:
-        cycle = session.exec(select(AgentCycle).order_by(AgentCycle.started_at.desc())).first()
-        actions = (
-            session.exec(select(AgentAction).where(AgentAction.cycle_id == cycle.id).order_by(AgentAction.id)).all()
-            if cycle
-            else []
-        )
-        jobs_count = session.exec(select(func.count()).select_from(Job)).one()
-    return JSONResponse(
-        {
-            "cycle": {"status": cycle.status.value, "phase": cycle.phase, "error": cycle.error} if cycle else None,
-            "actions": [{"kind": item.kind, "status": item.status.value, "error": item.error} for item in actions],
-            "jobs": jobs_count,
-        }
-    )
+    return JSONResponse(_boot_state()[3])
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -318,39 +342,79 @@ def overview(request: Request):
     )
 
 
-def _match_rows(s, min_score: int = 0, limit: int = 500, status: str = "all", rec: str = "all"):
-    """Latest active-harness match per job, filtered and sorted by score descending."""
+@dataclass(frozen=True)
+class MatchRow:
+    """One ranked role, ready to render.
+
+    ``review_status`` is carried here rather than assigned onto the ``Match``
+    instance: triage state lives on ``JobReview``, and writing it onto a live ORM
+    object risks the next flush persisting a display-only value.
+    """
+
+    match: Match
+    job: Job
+    company: Company
+    red_flags: list[str]
+    review_status: str | None
+
+
+def _match_rows(
+    s, min_score: int = 0, limit: int = 500, status: str = "all", rec: str = "all"
+) -> list[MatchRow]:
+    """Latest active-harness match per job, filtered and sorted by score descending.
+
+    Ranking happens in SQL: the previous version loaded every match row ever written
+    and de-duplicated in Python, so the page got slower with every re-score.
+    """
+    ranked = select(
+        Match.id.label("match_id"),
+        func.row_number()
+        .over(
+            partition_by=Match.job_id,
+            order_by=(Match.created_at.desc(), Match.id.desc()),
+        )
+        .label("rank"),
+    ).join(Job, Match.job_id == Job.id).where(Job.is_active == True)  # noqa: E712
+    if workspace.is_ready:
+        ranked = ranked.where(Match.profile_hash == workspace.harness_hash)
+    latest = ranked.subquery()
+
     query = (
-        select(Match, Job, Company)
+        select(Match, Job, Company, JobReview)
+        .join(latest, latest.c.match_id == Match.id)
         .join(Job, Match.job_id == Job.id)
         .join(Company, Job.company_id == Company.id)
-        .where(Job.is_active == True)  # noqa: E712
-        .order_by(Match.created_at.desc())
+        .outerjoin(JobReview, JobReview.job_id == Job.id)
+        .where(latest.c.rank == 1, Match.score >= min_score)
+        .order_by(Match.score.desc(), Match.created_at.desc())
     )
-    rows = s.exec(query).all()
-    reviews = {review.job_id: review for review in s.exec(select(JobReview)).all()}
-    seen: set[int] = set()
-    out = []
-    for match, job, company in rows:
-        if workspace.is_ready and match.profile_hash != workspace.harness_hash:
-            continue
-        if job.id in seen:
-            continue
-        seen.add(job.id)
-        if match.score < min_score:
-            continue
-        review = reviews.get(job.id)
-        review_status = review.user_status if review else None
-        match.user_status = review_status
-        if status == "new" and review_status is not None:
-            continue
-        if status not in ("all", "new") and review_status != status:
-            continue
-        if rec != "all" and match.recommendation != rec:
-            continue
-        out.append((match, job, company, json.loads(match.red_flags or "[]")))
-    out.sort(key=lambda row: (row[0].score, row[0].created_at), reverse=True)
-    return out[:limit]
+    if status == "new":
+        query = query.where(
+            or_(JobReview.id.is_(None), JobReview.user_status.is_(None))
+        )
+    elif status != "all":
+        query = query.where(JobReview.user_status == status)
+    if rec != "all":
+        query = query.where(Match.recommendation == rec)
+
+    return [
+        MatchRow(
+            match=match,
+            job=job,
+            company=company,
+            red_flags=_json_list(match.red_flags),
+            review_status=review.user_status if review else None,
+        )
+        for match, job, company, review in s.exec(query.limit(limit)).all()
+    ]
+
+
+def _json_list(raw: str | None) -> list:
+    try:
+        value = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    return value if isinstance(value, list) else [value]
 
 
 @app.get("/matches", response_class=HTMLResponse)
@@ -371,21 +435,35 @@ def matches(request: Request, min_score: int | None = None, status: str = "new",
     )
 
 
+REVIEW_STATUSES = {"saved", "applied", "dismissed", "new"}
+
+
 @app.post("/matches/{match_id}/status", response_class=HTMLResponse)
 def set_match_status(request: Request, match_id: int, user_status: str = Form(...)):
+    if user_status not in REVIEW_STATUSES:
+        raise HTTPException(status_code=422, detail=f"Unknown review status: {user_status}")
+    resolved: str | None = None
+    role_name = ""
     with get_session() as s:
         match = s.get(Match, match_id)
-        if match:
-            review = s.exec(select(JobReview).where(JobReview.job_id == match.job_id)).first()
-            if review is None:
-                review = JobReview(job_id=match.job_id)
-            review.user_status = None if user_status == "new" else user_status
-            review.updated_at = utcnow()
-            s.add(review)
-            s.commit()
-            match.user_status = review.user_status
+        if match is None:
+            raise HTTPException(status_code=404, detail="No such evaluation")
+        job = s.get(Job, match.job_id)
+        company = s.get(Company, job.company_id) if job else None
+        if job:
+            role_name = f"{job.title} at {company.name}" if company else job.title
+        review = s.exec(select(JobReview).where(JobReview.job_id == match.job_id)).first()
+        if review is None:
+            review = JobReview(job_id=match.job_id)
+        review.user_status = None if user_status == "new" else user_status
+        review.updated_at = utcnow()
+        s.add(review)
+        s.commit()
+        resolved = review.user_status
     return HTMLResponse(
-        templates.get_template("partials/match_status.html").render(match=match)
+        templates.get_template("partials/match_status.html").render(
+            match_id=match_id, user_status=resolved, role_name=role_name
+        )
     )
 
 
@@ -419,20 +497,23 @@ def jobs(request: Request, company_id: int | None = None, q: str = ""):
 def job_detail(request: Request, job_id: int):
     with get_session() as s:
         job = s.get(Job, job_id)
+        if job is None:
+            raise HTTPException(status_code=404, detail="No such role")
         company = s.get(Company, job.company_id)
         match_query = select(Match).where(Match.job_id == job_id)
         if workspace.is_ready:
             match_query = match_query.where(Match.profile_hash == workspace.harness_hash)
         match = s.exec(match_query.order_by(Match.created_at.desc())).first()
         review = s.exec(select(JobReview).where(JobReview.job_id == job_id)).first()
-        if match:
-            match.user_status = review.user_status if review else None
         prefilter = s.exec(
             select(Prefilter)
             .where(Prefilter.job_id == job_id)
             .order_by(Prefilter.created_at.desc())
         ).first()
-        red_flags = json.loads(match.red_flags or "[]") if match else []
+        red_flags = _json_list(match.red_flags) if match else []
+        feedback = s.exec(
+            select(Feedback).where(Feedback.job_id == job_id).order_by(Feedback.created_at.desc())
+        ).all()
     return render(
         request,
         "job_detail.html",
@@ -442,6 +523,8 @@ def job_detail(request: Request, job_id: int):
         match=match,
         prefilter=prefilter,
         red_flags=red_flags,
+        review_status=review.user_status if review else None,
+        feedback=feedback,
     )
 
 
@@ -457,17 +540,32 @@ def job_feedback(job_id: int, label: str = Form(...), reason: str = Form("")):
 @app.get("/companies", response_class=HTMLResponse)
 def companies(request: Request):
     with get_session() as s:
-        rows = []
-        for c in s.exec(select(Company).order_by(Company.name)).all():
-            job_count = s.exec(
-                select(func.count())
-                .select_from(Job)
-                .where(Job.company_id == c.id, Job.is_active == True)  # noqa: E712
-            ).one()
-            rows.append((c, job_count))
-        pending = [c for c, _ in rows if c.status == CompanyStatus.pending_approval]
+        # One grouped count rather than a COUNT per company.
+        counts = dict(
+            s.exec(
+                select(Job.company_id, func.count(Job.id))
+                .where(Job.is_active == True)  # noqa: E712
+                .group_by(Job.company_id)
+            ).all()
+        )
+        rows = [
+            (company, counts.get(company.id, 0))
+            for company in s.exec(select(Company).order_by(Company.name)).all()
+        ]
+        pending = [company for company, _ in rows if company.status == CompanyStatus.pending_approval]
+        grouped = {
+            "Active": [row for row in rows if row[0].status == CompanyStatus.active],
+            "Paused": [row for row in rows if row[0].status == CompanyStatus.paused],
+            "Rejected": [row for row in rows if row[0].status == CompanyStatus.rejected],
+        }
     return render(
-        request, "companies.html", active_page="companies", rows=rows, pending=pending
+        request,
+        "companies.html",
+        active_page="companies",
+        rows=rows,
+        pending=pending,
+        grouped={name: items for name, items in grouped.items() if items},
+        tracked_roles=sum(count for _, count in rows),
     )
 
 
@@ -486,82 +584,38 @@ def company_decision(company_id: int, decision: str = Form(...)):
             s.commit()
     return RedirectResponse("/companies", status_code=303)
 
-
 @app.get("/runs", response_class=HTMLResponse)
 def runs(request: Request):
     with get_session() as s:
         rows = s.exec(select(Run).order_by(Run.started_at.desc()).limit(100)).all()
-        run_rows = [(r, json.loads(r.stats_json or "{}")) for r in rows]
-    return render(request, "runs.html", active_page="runs", runs=run_rows)
-
-
-ACTIVITY_PHASES = [
-    ("probe", "Verify sources", "Check which career systems can be trusted."),
-    ("ingest", "Collect openings", "Pull current roles from approved companies."),
-    ("match", "Evaluate roles", "Apply the active search policy and evidence rubric."),
-    ("scout", "Scout gaps", "Inspect unsupported career sites for missing coverage."),
-    ("consolidate_memory", "Update memory", "Turn durable observations into a reviewable revision."),
-    ("digest", "Prepare briefing", "Summarize what changed and what needs attention."),
-]
-
-
-def _activity_json(raw: str) -> dict:
-    try:
-        value = json.loads(raw or "{}")
-    except (TypeError, json.JSONDecodeError):
-        return {"result": raw}
-    return value if isinstance(value, dict) else {"result": value}
+    return render(
+        request,
+        "runs.html",
+        active_page="runs",
+        runs=[
+            {
+                "kind": humanize_key(run.kind),
+                "status": run.status.value if hasattr(run.status, "value") else str(run.status),
+                "started_at": run.started_at,
+                "finished_at": run.finished_at,
+                "duration": format_duration(elapsed_seconds(run.started_at, run.finished_at)),
+                "facts": payload_facts(parse_payload(run.stats_json)),
+                "error": run.error,
+            }
+            for run in rows
+        ],
+    )
 
 
 def _activity_status(value) -> str:
     return getattr(value, "value", str(value))
 
 
-def _activity_duration(action: AgentAction) -> str:
-    now = datetime.now(timezone.utc)
-    if action.created_at.tzinfo is None:
-        now = now.replace(tzinfo=None)
-    seconds = max(0, int(((action.finished_at or now) - action.created_at).total_seconds()))
-    if seconds < 60:
-        return f"{seconds}s"
-    minutes, seconds = divmod(seconds, 60)
-    if minutes < 60:
-        return f"{minutes}m {seconds:02d}s"
-    hours, minutes = divmod(minutes, 60)
-    return f"{hours}h {minutes:02d}m"
-
-
-def _activity_action_view(action: AgentAction, *, collected_roles: int = 0) -> dict:
-    payload = _activity_json(action.result_json)
+def _action_view(action: AgentAction, *, collected_roles: int = 0) -> dict:
+    """One agent action, described in words and labelled facts rather than JSON."""
+    payload = parse_payload(action.result_json)
     status = _activity_status(action.status)
-    definitions = {kind: (title, detail) for kind, title, detail in ACTIVITY_PHASES}
-    title, detail = definitions.get(
-        action.kind,
-        (action.kind.replace("_", " ").title(), "A persisted agent action."),
-    )
-    if status == "running":
-        if action.kind == "match" and collected_roles:
-            summary = f"Evaluating {collected_roles:,} newly collected roles"
-        else:
-            summary = f"{detail.rstrip('.')} now"
-    elif status == "failed":
-        summary = action.error or "The action stopped before completing."
-    elif action.kind == "ingest" and payload:
-        summary = (
-            f"{int(payload.get('new', 0)):,} new roles across "
-            f"{int(payload.get('companies', 0)):,} companies"
-        )
-        if payload.get("errors"):
-            summary += f" · {payload['errors']} source errors"
-    elif action.kind == "probe":
-        summary = "Career sources verified and ready for collection"
-    elif action.kind == "match" and payload:
-        evaluated = payload.get("evaluated") or payload.get("scored") or payload.get("jobs")
-        summary = f"{int(evaluated):,} roles evaluated" if evaluated else "Role evaluation complete"
-    elif payload:
-        summary = str(payload.get("summary") or payload.get("status") or detail)
-    else:
-        summary = detail
+    title, detail = action_title(action.kind)
     return {
         "id": action.id,
         "cycle_id": action.cycle_id,
@@ -569,13 +623,23 @@ def _activity_action_view(action: AgentAction, *, collected_roles: int = 0) -> d
         "title": title,
         "detail": detail,
         "status": status,
-        "summary": summary,
+        "summary": summarize_action(
+            action.kind, status, payload, action.error, {"collected_roles": collected_roles}
+        ),
         "attempts": action.attempts,
-        "duration": _activity_duration(action),
+        "duration": format_duration(elapsed_seconds(action.created_at, action.finished_at)),
         "created_at": action.created_at,
         "finished_at": action.finished_at,
-        "payload": payload,
-        "payload_pretty": json.dumps(payload, indent=2, sort_keys=True, default=str),
+        "facts": payload_facts(payload),
+        "cost": format_money(action.cost_usd) if action.llm_calls else None,
+        "llm_calls": action.llm_calls,
+        "cached_tokens": action.cached_tokens,
+        "token_summary": (
+            f"{action.input_tokens + action.output_tokens:,} tokens"
+            + (f" · {action.cached_tokens:,} from cache" if action.cached_tokens else "")
+            if action.llm_calls
+            else None
+        ),
         "error": action.error,
     }
 
@@ -589,68 +653,111 @@ def _activity_signature(cycle: AgentCycle | None, actions: list[AgentAction], ev
     return f"{cycle_state}|{action_state}|{event_state}"
 
 
-@app.get("/activity", response_class=HTMLResponse)
-def activity(request: Request):
+def _activity_context() -> dict:
     with get_session() as s:
         cycles = s.exec(select(AgentCycle).order_by(AgentCycle.started_at.desc()).limit(50)).all()
         actions = s.exec(select(AgentAction).order_by(AgentAction.created_at.desc()).limit(100)).all()
         events = s.exec(select(AgentEvent).order_by(AgentEvent.created_at.desc()).limit(100)).all()
+        spend_7d = s.exec(
+            select(func.coalesce(func.sum(AgentCycle.cost_usd), 0.0)).where(
+                AgentCycle.started_at >= utcnow() - timedelta(days=7)
+            )
+        ).one()
     latest_cycle = cycles[0] if cycles else None
-    ingest_payload = next(
-        (_activity_json(action.result_json) for action in actions if action.kind == "ingest" and _activity_status(action.status) == "success"),
-        {},
+    collected_roles = next(
+        (
+            int(parse_payload(action.result_json).get("new", 0) or 0)
+            for action in actions
+            if action.kind == "ingest" and _activity_status(action.status) == "success"
+        ),
+        0,
     )
-    collected_roles = int(ingest_payload.get("new", 0) or 0)
-    action_views = [_activity_action_view(action, collected_roles=collected_roles) for action in actions]
-    current_action = next((action for action in action_views if action["status"] == "running"), None)
-    if current_action is None and action_views:
-        current_action = action_views[0]
-    latest_actions = {action["kind"]: action for action in action_views if latest_cycle and action["cycle_id"] == latest_cycle.id}
-    phase_views = []
-    for kind, title, detail in ACTIVITY_PHASES:
-        action = latest_actions.get(kind)
-        phase_views.append(
-            {
-                "kind": kind,
-                "title": title,
-                "detail": detail,
-                "status": action["status"] if action else "pending",
-                "summary": action["summary"] if action else "Queued",
-            }
+    action_views = [_action_view(action, collected_roles=collected_roles) for action in actions]
+    current_action = next(
+        (action for action in action_views if action["status"] == "running"),
+        action_views[0] if action_views else None,
+    )
+    cycle_actions = {
+        action["kind"]: action
+        for action in action_views
+        if latest_cycle and action["cycle_id"] == latest_cycle.id
+    }
+    # A cached action keeps the cycle_id of the run that actually did the work, so the
+    # action rows alone make it look as though this cycle skipped the stage. The cycle's
+    # own stats record every outcome, cached ones included — prefer that.
+    recorded = parse_payload(latest_cycle.stats_json).get("actions", {}) if latest_cycle else {}
+    phases = []
+    for kind, (title, detail) in ACTION_KINDS.items():
+        if kind == "digest":
+            continue
+        outcome = recorded.get(kind) if isinstance(recorded.get(kind), dict) else None
+        action = cycle_actions.get(kind)
+        if outcome and outcome.get("status") == "cached":
+            payload = outcome.get("result") if isinstance(outcome.get("result"), dict) else {}
+            status, duration = "cached", ""
+            summary = f"Carried over — {summarize_action(kind, 'success', payload).lower()}"
+        elif action:
+            status, summary, duration = action["status"], action["summary"], action["duration"]
+        elif outcome and outcome.get("status") == "failed":
+            status, summary, duration = "failed", outcome.get("error", "The action failed."), ""
+        else:
+            status, summary, duration = "pending", "Not due this cycle", ""
+        phases.append(
+            {"kind": kind, "title": title, "detail": detail,
+             "status": status, "summary": summary, "duration": duration}
         )
-    event_views = []
-    for event in events:
-        payload = _activity_json(event.payload_json)
-        event_views.append(
+    return {
+        "cycles": cycles,
+        "actions": action_views,
+        "events": [
             {
                 "id": event.id,
-                "type": event.event_type,
-                "label": event.event_type.replace("_", " ").title(),
+                "label": humanize_key(event.event_type),
                 "source": event.source,
-                "confidence": event.confidence,
                 "cycle_id": event.cycle_id,
-                "harness_hash": event.harness_hash,
                 "created_at": event.created_at,
-                "payload_pretty": json.dumps(payload, indent=2, sort_keys=True, default=str),
+                "summary": summarize_action(
+                    event.event_type.removesuffix("_completed"),
+                    "success",
+                    parse_payload(event.payload_json),
+                ),
+                "facts": payload_facts(parse_payload(event.payload_json)),
             }
-        )
-    completed_count = sum(action["status"] == "success" for action in action_views)
-    failed_count = sum(action["status"] == "failed" for action in action_views)
-    return render(
-        request,
-        "activity.html",
-        active_page="activity",
-        cycles=cycles,
-        actions=action_views,
-        events=event_views,
-        latest_cycle=latest_cycle,
-        current_action=current_action,
-        phases=phase_views,
-        completed_count=completed_count,
-        failed_count=failed_count,
-        collected_roles=collected_roles,
-        activity_signature=_activity_signature(latest_cycle, actions, events),
-    )
+            for event in events
+        ],
+        "latest_cycle": latest_cycle,
+        "current_action": current_action,
+        "phases": phases,
+        "completed_count": sum(action["status"] == "success" for action in action_views),
+        "failed_count": sum(action["status"] == "failed" for action in action_views),
+        "collected_roles": collected_roles,
+        "cycle_cost": format_money(latest_cycle.cost_usd) if latest_cycle else "$0.00",
+        "cycle_calls": latest_cycle.llm_calls if latest_cycle else 0,
+        "cycle_duration": (
+            format_duration(elapsed_seconds(latest_cycle.started_at, latest_cycle.finished_at))
+            if latest_cycle
+            else "—"
+        ),
+        "cycle_cache_ratio": _cache_ratio(latest_cycle),
+        "spend_7d": format_money(spend_7d or 0.0),
+        "activity_signature": _activity_signature(latest_cycle, actions, events),
+    }
+
+
+def _cache_ratio(cycle: AgentCycle | None) -> str:
+    """How much of the last cycle's prompt was served from cache instead of re-sent."""
+    if cycle is None or not cycle.llm_calls:
+        return "—"
+    billed = cycle.input_tokens + cycle.cached_tokens
+    return f"{cycle.cached_tokens / billed:.0%}" if billed else "—"
+
+
+@app.get("/activity", response_class=HTMLResponse)
+def activity(request: Request):
+    context = _activity_context()
+    # htmx swaps just the live region; a full navigation renders the whole page.
+    template = "partials/activity_body.html" if request.headers.get("HX-Request") else "activity.html"
+    return render(request, template, active_page="activity", **context)
 
 
 @app.get("/activity/status")
@@ -665,8 +772,9 @@ def activity_status():
         "status": _activity_status(cycle.status) if cycle else "idle",
         "phase": cycle.phase if cycle else "waiting",
         "phase_label": (
-            next((title for kind, title, _ in ACTIVITY_PHASES if running and kind == running.kind), None)
-            or (cycle.phase.replace("_", " ").title() if cycle else "Waiting for first cycle")
+            action_title(running.kind)[0]
+            if running
+            else (humanize_key(cycle.phase) if cycle else "Waiting for first cycle")
         ),
     }
 
@@ -687,11 +795,26 @@ def search_state(request: Request):
     )
 
 
+#: These tables only grow, so every list page needs a ceiling.
+PAGE_LIMIT = 200
+
+
 @app.get("/memory", response_class=HTMLResponse)
 def memory(request: Request):
     with get_session() as s:
-        revisions = s.exec(select(MemoryRevision).order_by(MemoryRevision.created_at.desc())).all()
-    return render(request, "memory.html", active_page="memory", revisions=revisions)
+        revisions = s.exec(
+            select(MemoryRevision)
+            .order_by(MemoryRevision.created_at.desc())
+            .limit(PAGE_LIMIT)
+        ).all()
+        total = s.exec(select(func.count()).select_from(MemoryRevision)).one()
+    return render(
+        request,
+        "memory.html",
+        active_page="memory",
+        revisions=revisions,
+        truncated=max(0, total - len(revisions)),
+    )
 
 
 @app.post("/memory/{revision_id}/decision")
@@ -720,8 +843,16 @@ def feedback(request: Request):
             .join(Job, Feedback.job_id == Job.id)
             .join(Company, Job.company_id == Company.id)
             .order_by(Feedback.created_at.desc())
+            .limit(PAGE_LIMIT)
         ).all()
-    return render(request, "feedback.html", active_page="feedback", rows=rows)
+        total = s.exec(select(func.count()).select_from(Feedback)).one()
+    return render(
+        request,
+        "feedback.html",
+        active_page="feedback",
+        rows=rows,
+        truncated=max(0, total - len(rows)),
+    )
 
 
 @app.get("/sources", response_class=HTMLResponse)

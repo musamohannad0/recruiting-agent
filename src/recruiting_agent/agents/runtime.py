@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any
 
 from ..settings import settings
@@ -21,11 +22,34 @@ class TaskSpec:
     tools: tuple[str, ...] = ()
     effort: str | None = None
     max_turns: int = 3
+    max_budget_usd: float | None = None
 
 
 @dataclass
 class AgentRuntime:
     candidate_workspace: CandidateWorkspace = field(default_factory=lambda: workspace)
+
+    def build_system_prompt(self, task: TaskSpec, fallback_context: str = "") -> str:
+        """Task instructions plus the candidate harness, as one stable prefix.
+
+        Everything invariant across a batch of calls belongs here rather than in the
+        per-item turn: an identical prefix is what lets the model cache it, so a
+        scoring run pays for the harness once instead of once per role.
+        """
+        context = self._context(task.context_sections) or fallback_context
+        if not context:
+            return task.system_prompt
+        return f"{task.system_prompt}\n\n# Candidate harness\n\n{context}"
+
+    def _context(self, sections: tuple[str, ...]) -> str:
+        """Read the harness sections once per (harness, section set), not once per call."""
+        if not sections:
+            return ""
+        return _load_context_cached(
+            self.candidate_workspace.root.as_posix(),
+            self.candidate_workspace.harness_hash,
+            tuple(sections),
+        )
 
     async def run(
         self,
@@ -35,12 +59,6 @@ class AgentRuntime:
         metadata: dict[str, Any] | None = None,
         fallback_context: str = "",
     ) -> LLMResult:
-        context = self.candidate_workspace.load_context(task.context_sections)
-        if not context:
-            context = fallback_context
-        full_prompt = prompt
-        if context:
-            full_prompt = f"## Candidate harness\n\n{context}\n\n## Task\n\n{prompt}"
         builtins = [name for name in task.tools if name in BUILTIN_TOOLS]
         custom = [name for name in task.tools if name not in BUILTIN_TOOLS]
         mcp_servers = None
@@ -53,8 +71,8 @@ class AgentRuntime:
         return await llm_json(
             name=task.name,
             model=task.model,
-            system_prompt=task.system_prompt,
-            prompt=full_prompt,
+            system_prompt=self.build_system_prompt(task, fallback_context),
+            prompt=prompt,
             schema=task.schema,
             effort=task.effort,
             metadata={"harness_hash": self.candidate_workspace.harness_hash, **(metadata or {})},
@@ -64,8 +82,32 @@ class AgentRuntime:
             cwd=self.candidate_workspace.root,
             max_turns=task.max_turns,
             mcp_servers=mcp_servers,
+            max_budget_usd=task.max_budget_usd,
         )
 
 
+@lru_cache(maxsize=64)
+def _load_context_cached(root: str, harness_hash: str, sections: tuple[str, ...]) -> str:
+    """Harness sections for one harness version. Keyed on the hash, so an approved
+    revision bumps the hash and the next call reads from disk again."""
+    from pathlib import Path
+
+    return CandidateWorkspace(Path(root)).load_context(sections)
+
+
+@lru_cache(maxsize=1)
+def _shared_runtime(workspace_dir: str) -> AgentRuntime:
+    from pathlib import Path
+
+    return AgentRuntime(CandidateWorkspace(Path(workspace_dir)))
+
+
 def default_runtime() -> AgentRuntime:
-    return AgentRuntime(CandidateWorkspace(settings.workspace_dir))
+    """One shared runtime per workspace, so its caches survive across calls."""
+    return _shared_runtime(settings.workspace_dir.as_posix())
+
+
+def reset_runtime_caches() -> None:
+    """Drop memoized harness context — for tests and after a workspace rewrite."""
+    _load_context_cached.cache_clear()
+    _shared_runtime.cache_clear()

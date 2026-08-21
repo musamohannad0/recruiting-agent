@@ -28,6 +28,28 @@ constitution, decision rubric, company thesis, calibration anchors, cadence, app
 memory, and a versioned manifest. The complete workspace becomes the harness hash used
 to select current scores and invalidate stale evaluations.
 
+## Watching the agent work
+
+`/activity` is the operations view: the current cycle's phase track, every recorded
+action with what it produced, and what the cycle cost — dollars, model calls, and the
+share of prompt tokens served from cache. It updates in place while a cycle runs, so
+scroll position and open detail panels survive a refresh.
+
+A cycle that loses one stage still finishes the rest and reports `partial`, naming what
+failed. `/runs` keeps the per-pipeline history; `/memory` holds revisions waiting for
+your approval; `/sources` shows which career systems are still answering.
+
+## Cost
+
+Nothing is re-evaluated unless the job content or the approved harness changes. Within
+a run, the candidate harness is sent once as a cached prefix rather than once per role,
+and a text resume rides along in that prefix instead of being fetched per role. Spend is
+recorded per action and per cycle, and the last cycle's cache hit rate is on `/activity`
+— if it reads low, something is varying inside the prefix.
+
+Tune models, retry attempts, per-call spend ceilings, and concurrency in `.env`
+(see `src/recruiting_agent/settings.py`).
+
 ## Local setup
 
 Requirements: Python 3.12, [`uv`](https://docs.astral.sh/uv/), and either an authenticated

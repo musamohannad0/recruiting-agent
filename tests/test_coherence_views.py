@@ -47,3 +47,32 @@ def test_coherence_dashboard_and_memory_approval(tmp_path: Path, monkeypatch):
     assert response.status_code == 200
     assert "Prefer infrastructure roles" in ws.read_section("memory/feedback-summary.md")
     assert ws.harness_hash != "initial"
+
+
+def test_rendered_markdown_never_emits_source_html():
+    """Job descriptions come from third-party ATS HTML; embedded markup must not execute."""
+    from recruiting_agent.reporting import render_markdown
+
+    hostile = (
+        "## Real heading\n\n"
+        "<script>alert('xss')</script>\n\n"
+        "<img src=x onerror=alert('xss')>\n\n"
+        "[looks fine](javascript:alert('xss'))\n\n"
+        "- a genuine bullet\n"
+    )
+    html = render_markdown(hostile)
+
+    assert "<h2>Real heading</h2>" in html
+    assert "<li>a genuine bullet</li>" in html
+    # Every piece of source markup arrives escaped, never as a live tag.
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    assert "onerror=" not in html or "&lt;img" in html
+    assert 'href="javascript:' not in html
+
+
+def test_rendered_markdown_handles_empty_input():
+    from recruiting_agent.reporting import render_markdown
+
+    assert render_markdown(None) == ""
+    assert render_markdown("") == ""

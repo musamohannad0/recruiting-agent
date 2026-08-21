@@ -1,8 +1,22 @@
 {% extends "base.html" %}
+{% block title %}Search policy — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Search State</h2>
-<p class="muted">Active harness: {{ harness_hash }}</p>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Policy · Harness {{ harness_hash[:8] }}</p>
+    <h2>Search policy</h2>
+    <p class="lede">The approved rules every evaluation is measured against. Changing any of it changes the harness hash, which re-evaluates open roles on the next cycle.</p>
+  </div>
+</header>
+
 {% for title, content in sections.items() %}
-<article><header><strong>{{ title }}</strong></header><pre class="desc">{{ content }}</pre></article>
+<section class="policy-section">
+  <h3>{{ title }}</h3>
+  {% if content %}
+  <div class="prose">{{ content | markdown | safe }}</div>
+  {% else %}
+  <p class="muted">Not written yet — this section is produced during onboarding.</p>
+  {% endif %}
+</section>
 {% endfor %}
 {% endblock %}

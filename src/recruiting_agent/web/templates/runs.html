@@ -1,18 +1,43 @@
 {% extends "base.html" %}
+{% block title %}Run history — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Runs</h2>
-<table>
-  <thead><tr><th>Kind</th><th>Status</th><th>Started</th><th>Finished</th><th>Stats</th></tr></thead>
-  <tbody>
-  {% for run, stats in runs %}
-  <tr>
-    <td>{{ run.kind }}</td>
-    <td>{% if run.status == "failed" %}<span style="color:#cf222e">failed</span>{% else %}{{ run.status }}{% endif %}</td>
-    <td class="muted">{{ run.started_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
-    <td class="muted">{{ run.finished_at.strftime("%H:%M:%S") if run.finished_at else "—" }}</td>
-    <td class="muted">{{ stats }}{% if run.error %}<details><summary>error</summary><pre>{{ run.error }}</pre></details>{% endif %}</td>
-  </tr>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Pipeline · Run history</p>
+    <h2>Run history</h2>
+    <p class="lede">Every ingest, match, and discovery pass, with what it produced. Coordinator cycles that group these into one wake-up live on <a href="/activity">Activity</a>.</p>
+  </div>
+</header>
+
+{% if runs %}
+<div class="record-list">
+  {% for run in runs %}
+  <article class="record {{ 'is-failed' if run.status == 'failed' }}">
+    <header>
+      <span class="record-title">
+        <strong>{{ run.kind }}</strong>
+        <small>{{ run.started_at.strftime('%b %-d, %Y · %-I:%M %p') }} · {{ run.duration }}</small>
+      </span>
+      <span class="pill status-{{ run.status }}">{{ run.status }}</span>
+    </header>
+    {% if run.facts %}
+    <dl class="fact-row">
+      {% for fact in run.facts %}
+      <div><dt>{{ fact.label }}</dt><dd class="tone-{{ fact.tone or 'neutral' }}">{{ fact.value }}</dd></div>
+      {% endfor %}
+    </dl>
+    {% else %}
+    <p class="muted">No results were recorded for this run.</p>
+    {% endif %}
+    {% if run.error %}<p class="record-error"><strong>Stopped</strong> {{ run.error }}</p>{% endif %}
+  </article>
   {% endfor %}
-  </tbody>
-</table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No runs recorded yet</h3>
+  <p>Runs appear here once the coordinator wakes up. Start one now with <code>uv run ra run-cycle --trigger manual</code>, or leave <code>uv run ra worker</code> running.</p>
+  <a class="button secondary" href="/activity">View agent activity</a>
+</div>
+{% endif %}
 {% endblock %}

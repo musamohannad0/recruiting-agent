@@ -2,15 +2,35 @@
 {% from "macros.html" import score_badge %}
 {% block title %}{{ job.title }} — {{ company.name }}{% endblock %}
 {% block content %}
-<h2>{{ job.title }}</h2>
-<p class="muted">{{ company.name }} · {{ job.location or "—" }}{% if job.department %} · {{ job.department }}{% endif %}
-  · <a href="{{ job.url }}" target="_blank">posting ↗</a>
-  {% if job.apply_url and job.apply_url != job.url %} · <a href="{{ job.apply_url }}" target="_blank">apply ↗</a>{% endif %}
-</p>
+<header class="page-header job-header">
+  <div>
+    <p class="eyebrow">{{ company.name }}{% if job.department %} · {{ job.department }}{% endif %}</p>
+    <h2>{{ job.title }}</h2>
+    <p class="lede">
+      {{ job.location or "Location not stated" }}
+      {% if job.posted_at %} · posted {{ job.posted_at.strftime('%b %-d, %Y') }}{% endif %}
+      · first seen {{ job.first_seen_at.strftime('%b %-d, %Y') }}
+    </p>
+    <p class="job-links">
+      <a class="button secondary small" href="{{ job.url }}" target="_blank" rel="noopener">Open posting ↗</a>
+      {% if job.apply_url and job.apply_url != job.url %}<a class="button secondary small" href="{{ job.apply_url }}" target="_blank" rel="noopener">Apply ↗</a>{% endif %}
+    </p>
+  </div>
+  {% if match %}
+  <div class="header-stat score-stat">
+    {{ score_badge(match.score) }}
+    <span class="rec-{{ match.recommendation }}">{{ match.recommendation }}</span>
+    {% if review_status %}<span class="pill status-{{ review_status }}">{{ review_status }}</span>{% endif %}
+  </div>
+  {% endif %}
+</header>
 
 {% if match %}
 <article class="evaluation-card">
-  <header><div>{{ score_badge(match.score) }} <span class="rec-{{ match.recommendation }}">{{ match.recommendation }}</span></div><span class="eyebrow">Why {{ match.score }}/100</span></header>
+  <header>
+    <div><span class="eyebrow">The evaluation</span></div>
+    <span class="eyebrow">Why {{ match.score }}/100</span>
+  </header>
   <section><span class="rationale-label">Agent rationale</span><p>{{ match.reasoning }}</p></section>
   <div class="fit-evidence">
     <section><span class="rationale-label">Seniority</span><p>{{ match.seniority_fit or 'No seniority note recorded.' }}</p></section>
@@ -20,34 +40,67 @@
   <details class="evaluation-trace">
     <summary>Evaluation record <span class="disclosure-chevron" aria-hidden="true"></span></summary>
     <div>
-      {% if prefilter %}<p><strong>Prefilter:</strong> {{ prefilter.verdict }} — {{ prefilter.reason }}</p>{% endif %}
-      <p><strong>Policy inputs:</strong> Career story · search constitution · decision rubric · calibration anchors · feedback summary (<a href="/search-state">view active policy</a>)<br><strong>Model:</strong> {{ match.model or 'not recorded' }}<br><strong>Harness:</strong> {{ match.profile_hash }}<br><strong>Prompt:</strong> {{ match.prompt_version or 'not recorded' }}<br><strong>Evaluated:</strong> {{ match.created_at.strftime('%b %-d, %Y · %-I:%M %p') }}{% if match.cost_usd is not none %}<br><strong>Cost:</strong> ${{ '%.4f'|format(match.cost_usd) }}{% endif %}<br><strong>Trace:</strong> {{ match.langfuse_trace_id if match.langfuse_trace_id else 'External tracing was not configured for this run.' }}</p>
+      <dl class="fact-row">
+        {% if prefilter %}<div><dt>Screen</dt><dd>{{ prefilter.verdict }} — {{ prefilter.reason }}</dd></div>{% endif %}
+        <div><dt>Model</dt><dd>{{ match.model or 'not recorded' }}</dd></div>
+        <div><dt>Prompt</dt><dd>{{ match.prompt_version or 'not recorded' }}</dd></div>
+        <div><dt>Harness</dt><dd>{{ match.profile_hash[:12] }}</dd></div>
+        <div><dt>Evaluated</dt><dd>{{ match.created_at.strftime('%b %-d, %Y · %-I:%M %p') }}</dd></div>
+        {% if match.cost_usd is not none %}<div><dt>Cost</dt><dd>${{ '%.4f'|format(match.cost_usd) }}</dd></div>{% endif %}
+      </dl>
+      <p class="muted">Policy inputs: career story · search constitution · decision rubric · calibration anchors · feedback summary — <a href="/search-state">view active policy</a>.
+      {% if match.langfuse_trace_id %} Trace {{ match.langfuse_trace_id }}.{% else %} External tracing was not configured for this run.{% endif %}</p>
     </div>
   </details>
 </article>
-<details>
-  <summary>This recommendation misses</summary>
-  <form method="post" action="/jobs/{{ job.id }}/feedback">
-    <label>My judgment
-      <select name="label">
-        <option value="excited">This should be ranked higher</option>
-        <option value="consider">This is only a maybe</option>
-        <option value="pass">This should be a pass</option>
-      </select>
-    </label>
-    <label>Why?<textarea name="reason" rows="3" required></textarea></label>
-    <button type="submit">Record correction</button>
+
+{% if feedback %}
+<section class="section-heading"><div><p class="eyebrow">Your corrections</p><h3>What you told the agent</h3></div></section>
+<div class="record-list">
+  {% for item in feedback %}
+  <article class="record">
+    <header>
+      <span class="record-title"><strong>{{ item.label }}</strong><small>{{ item.created_at.strftime('%b %-d, %Y') }}</small></span>
+      <span class="pill feedback-{{ item.label }}">{{ item.label }}</span>
+    </header>
+    {% if item.reason %}<p class="record-body">{{ item.reason }}</p>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% endif %}
+
+<details class="correction-form">
+  <summary>This recommendation misses <span class="disclosure-chevron" aria-hidden="true"></span></summary>
+  <form method="post" action="/jobs/{{ job.id }}/feedback" class="form-card">
+    <div class="form-stack">
+      <label>My judgment
+        <select name="label">
+          <option value="excited">This should be ranked higher</option>
+          <option value="consider">This is only a maybe</option>
+          <option value="pass">This should be a pass</option>
+        </select>
+      </label>
+      <label>Why?
+        <small class="field-help">Explicit corrections outrank the agent's own inference when the rubric is recalibrated.</small>
+        <textarea name="reason" rows="3" required></textarea>
+      </label>
+      <div class="form-actions"><button class="primary" type="submit" data-pending-label="Recording">Record correction</button></div>
+    </div>
   </form>
 </details>
 {% elif prefilter %}
-<article>
-  <header>Prefilter: <strong>{{ prefilter.verdict }}</strong></header>
-  <p class="muted">{{ prefilter.reason }} ({{ prefilter.model }})</p>
+<article class="panel">
+  <header><strong>Screened out at the first pass</strong></header>
+  <p>{{ prefilter.reason }}</p>
+  <p class="muted">Verdict: {{ prefilter.verdict }} · {{ prefilter.model }}. Screened roles are not scored in full.</p>
 </article>
 {% else %}
-<p class="muted">Not yet evaluated.</p>
+<div class="empty-state">
+  <h3>Not yet evaluated</h3>
+  <p>This role has been collected but has not been through a screening pass yet.</p>
+</div>
 {% endif %}
 
-<h3>Description</h3>
-<pre class="desc">{{ job.description_md }}</pre>
+<section class="section-heading"><div><p class="eyebrow">From the posting</p><h3>Description</h3></div></section>
+<div class="prose job-description">{{ job.description_md | markdown | safe }}</div>
 {% endblock %}

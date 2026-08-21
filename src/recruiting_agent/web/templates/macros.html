@@ -2,7 +2,8 @@
   <span class="score {{ 'score-hi' if score >= 75 else ('score-mid' if score >= 60 else 'score-lo') }}">{{ score }}</span>
 {%- endmacro %}
 
-{% macro match_row(match, job, company, red_flags) -%}
+{% macro match_row(row) -%}
+{% set match, job, company, red_flags = row.match, row.job, row.company, row.red_flags %}
 <tr>
   <td>{{ score_badge(match.score) }}</td>
   <td>
@@ -26,6 +27,6 @@
     </details>
   </td>
   <td><a href="{{ job.url }}" target="_blank">posting ↗</a></td>
-  <td id="status-{{ match.id }}">{% include "partials/match_status.html" %}</td>
+  <td id="status-{{ match.id }}">{% with match_id = match.id, user_status = row.review_status, role_name = job.title ~ " at " ~ company.name %}{% include "partials/match_status.html" %}{% endwith %}</td>
 </tr>
 {%- endmacro %}

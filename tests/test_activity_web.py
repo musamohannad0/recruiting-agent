@@ -65,7 +65,10 @@ def test_activity_turns_agent_records_into_live_progress(tmp_path: Path, monkeyp
     assert page.status_code == 200
     assert "The search, in motion." in page.text
     assert "Evaluating 6,350 newly collected roles" in page.text
-    assert "Recorded result" in page.text
+    # Recorded results are rendered as labelled facts, not a JSON dump.
+    assert "What it recorded" in page.text
+    assert "New roles" in page.text and "6,350" in page.text
+    assert '{"companies"' not in page.text and "&#34;companies&#34;" not in page.text
 
     status = client.get("/activity/status")
     assert status.status_code == 200

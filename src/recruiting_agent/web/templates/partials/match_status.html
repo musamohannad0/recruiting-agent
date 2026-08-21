@@ -1,12 +1,14 @@
 <div class="status-btns">
-  {% if match.user_status %}<em>{{ match.user_status }}</em>{% endif %}
-  {% for s, label in [("saved", "Save"), ("applied", "Applied"), ("dismissed", "Dismiss"), ("new", "Reset")] %}
-    {% if match.user_status != s and not (s == "new" and not match.user_status) %}
-    <button class="secondary outline"
-            hx-post="/matches/{{ match.id }}/status"
-            hx-vals='{"user_status": "{{ s }}"}'
-            hx-target="#status-{{ match.id }}"
-            hx-swap="innerHTML">{{ label }}</button>
+  {% if user_status %}<span class="pill status-{{ user_status }}">{{ user_status }}</span>{% endif %}
+  {% for value, label in [("saved", "Save"), ("applied", "Applied"), ("dismissed", "Dismiss"), ("new", "Reset")] %}
+    {% if user_status != value and not (value == "new" and not user_status) %}
+    <button type="button"
+            aria-label="{{ label }}{% if role_name %} — {{ role_name }}{% endif %}"
+            hx-post="/matches/{{ match_id }}/status"
+            hx-vals='{"user_status": "{{ value }}"}'
+            hx-target="#status-{{ match_id }}"
+            hx-swap="innerHTML"
+            data-pending-label="Saving">{{ label }}</button>
     {% endif %}
   {% endfor %}
 </div>

@@ -1,17 +1,46 @@
 {% extends "base.html" %}
+{% block title %}Memory revisions — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Memory Revisions</h2>
-<p class="muted">Agents can propose changes, but policy and durable memory require your approval.</p>
-{% for revision in revisions %}
-<article>
-  <header><strong>{{ revision.section }}</strong> · {{ revision.status }}</header>
-  <pre class="desc">{{ revision.content }}</pre>
-  {% if revision.status == 'proposed' %}
-  <form method="post" action="/memory/{{ revision.id }}/decision" style="display:inline">
-    <button name="decision" value="approve" style="width:auto;display:inline-block">Approve</button>
-    <button name="decision" value="reject" class="secondary" style="width:auto;display:inline-block">Reject</button>
-  </form>
-  {% endif %}
-</article>
-{% else %}<p class="muted">No proposed memory changes.</p>{% endfor %}
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Durable memory · Your approval</p>
+    <h2>Memory revisions</h2>
+    <p class="lede">Agents propose changes to durable memory; nothing is written until you approve it.</p>
+  </div>
+  {% set proposed = revisions|selectattr('status', 'equalto', 'proposed')|list %}
+  {% if proposed %}<div class="header-stat"><span>Awaiting you</span><strong>{{ proposed|length }}</strong></div>{% endif %}
+</header>
+
+{% if revisions %}
+<div class="record-list">
+  {% for revision in revisions %}
+  <article class="record">
+    <header>
+      <span class="record-title">
+        <strong>{{ revision.section }}</strong>
+        <small>Events {{ revision.source_event_start }}–{{ revision.source_event_end }}{% if revision.decided_at %} · decided {{ revision.decided_at.strftime('%b %-d, %Y') }}{% endif %}</small>
+      </span>
+      <span class="pill status-{{ 'warning' if revision.status == 'proposed' else ('success' if revision.status == 'approved' else 'failed') }}">{{ revision.status }}</span>
+    </header>
+    <details class="revision-body" {{ 'open' if revision.status == 'proposed' }}>
+      <summary>Proposed content <span class="disclosure-chevron" aria-hidden="true"></span></summary>
+      <div class="prose">{{ revision.content | markdown | safe }}</div>
+    </details>
+    {% if revision.status == 'proposed' %}
+    <form method="post" action="/memory/{{ revision.id }}/decision" class="record-actions">
+      <button class="primary" name="decision" value="approve" data-pending-label="Approving">Approve</button>
+      <button class="secondary" name="decision" value="reject" data-pending-label="Rejecting">Reject</button>
+    </form>
+    {% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No memory revisions yet</h3>
+  <p>The coordinator proposes these after it has enough observations to be worth writing down.</p>
+  <a class="button secondary" href="/activity">View agent activity</a>
+</div>
+{% endif %}
+{% if truncated %}<p class="muted">Showing the {{ rows|length if rows is defined else revisions|length }} most recent · {{ truncated }} older not shown.</p>{% endif %}
 {% endblock %}

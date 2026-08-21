@@ -6,7 +6,8 @@ import json
 import typer
 from sqlmodel import select
 
-from ..agents.prefilter import BATCH_SIZE, PrefilterInput, prefilter_batch
+from ..agents.llm import track_usage
+from ..agents.prefilter import PrefilterInput, prefilter_batch
 from ..agents.profile import load_profile
 from ..agents.scoring import PROMPT_VERSION, score_job
 from ..db import get_session, init_db
@@ -21,8 +22,8 @@ from ..models import (
 )
 from ..settings import settings
 
-SCORING_CONCURRENCY = 4
-PREFILTER_CONCURRENCY = 4
+#: Rows written to the database between commits, so a long run checkpoints as it goes.
+COMMIT_EVERY = 20
 
 
 async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
@@ -30,6 +31,7 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
 
     init_db()
     profile = load_profile()
+    batch_size = settings.prefilter_batch_size
     totals = {
         "prefiltered": 0,
         "plausible": 0,
@@ -39,7 +41,7 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
         "cost_usd": 0.0,
     }
 
-    with get_session() as session:
+    with get_session() as session, track_usage() as usage:
         with track_run(session, RunKind.match) as handle:
             companies = {c.id: c.name for c in session.exec(select(Company)).all()}
             active_jobs = session.exec(select(Job).where(Job.is_active == True)).all()  # noqa: E712
@@ -55,9 +57,9 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
             if limit:
                 todo = todo[:limit]
 
-            typer.echo(f"Prefiltering {len(todo)} jobs (batches of {BATCH_SIZE})…")
-            batches = [todo[i : i + BATCH_SIZE] for i in range(0, len(todo), BATCH_SIZE)]
-            prefilter_semaphore = asyncio.Semaphore(PREFILTER_CONCURRENCY)
+            typer.echo(f"Prefiltering {len(todo)} jobs (batches of {batch_size})…")
+            batches = [todo[i : i + batch_size] for i in range(0, len(todo), batch_size)]
+            prefilter_semaphore = asyncio.Semaphore(settings.prefilter_concurrency)
 
             async def prefilter_one(batch: list[Job]) -> tuple[list[Job], dict | None]:
                 inputs = [
@@ -78,8 +80,9 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
                         return batch, None
 
             batches_done = 0
-            for group_start in range(0, len(batches), PREFILTER_CONCURRENCY * 2):
-                group = batches[group_start : group_start + PREFILTER_CONCURRENCY * 2]
+            group_size = settings.prefilter_concurrency * 2
+            for group_start in range(0, len(batches), group_size):
+                group = batches[group_start : group_start + group_size]
                 results = await asyncio.gather(*(prefilter_one(b) for b in group))
                 for batch, verdicts in results:
                     batches_done += 1
@@ -129,7 +132,7 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
             ]
             typer.echo(f"Scoring {len(to_score)} plausible jobs…")
 
-            semaphore = asyncio.Semaphore(SCORING_CONCURRENCY)
+            semaphore = asyncio.Semaphore(settings.scoring_concurrency)
 
             async def score_one(job: Job) -> tuple[Job, object | None]:
                 async with semaphore:
@@ -149,8 +152,8 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
                         return job, None
 
             done = 0
-            for chunk_start in range(0, len(to_score), 20):
-                chunk = to_score[chunk_start : chunk_start + 20]
+            for chunk_start in range(0, len(to_score), COMMIT_EVERY):
+                chunk = to_score[chunk_start : chunk_start + COMMIT_EVERY]
                 results = await asyncio.gather(*(score_one(j) for j in chunk))
                 for job, result in results:
                     done += 1
@@ -184,7 +187,18 @@ async def run_match(limit: int | None = None, rescore: bool = False) -> dict:
                 session.commit()
                 typer.echo(f"  {done}/{len(to_score)} scored")
 
+            totals["cost_usd"] = round(totals["cost_usd"], 6)
+            totals.update(usage.as_dict())
             handle.stats = totals
 
-    typer.echo(f"Match done: {totals}")
+    cached = usage.cache_read_tokens
+    billed = usage.input_tokens + cached + usage.cache_creation_tokens
+    if billed:
+        typer.echo(
+            f"Match done: {totals['scored']} scored, {totals['prefiltered']} screened, "
+            f"${usage.cost_usd:.4f} across {usage.llm_calls} calls "
+            f"({cached / billed:.0%} of prompt tokens served from cache)"
+        )
+    else:
+        typer.echo(f"Match done: {totals['scored']} scored, {totals['prefiltered']} screened")
     return totals

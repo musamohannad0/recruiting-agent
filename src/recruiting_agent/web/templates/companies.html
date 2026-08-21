@@ -1,47 +1,75 @@
 {% extends "base.html" %}
+{% block title %}Companies — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Companies</h2>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Search universe</p>
+    <h2>Companies</h2>
+    <p class="lede">The companies the agent watches. Discovered companies stay out of the search until you approve them.</p>
+  </div>
+  <div class="header-stat"><span>Open roles tracked</span><strong>{{ '{:,}'.format(tracked_roles) }}</strong></div>
+</header>
 
 {% if pending %}
-<article>
-  <header><strong>Awaiting approval</strong> <span class="badge">{{ pending|length }}</span></header>
-  <ul>
-    {% for c in pending %}
-    <li><strong>{{ c.name }}</strong> — {{ c.discovery_rationale }}
-      {% if c.careers_url %}<a href="{{ c.careers_url }}" target="_blank">careers ↗</a>{% endif %}
-      <form method="post" action="/companies/{{ c.id }}/decision" style="display:inline">
-        <button name="decision" value="approve" style="width:auto;display:inline-block;padding:.1rem .5rem">approve</button>
-        <button name="decision" value="reject" class="secondary" style="width:auto;display:inline-block;padding:.1rem .5rem">reject</button>
+<section class="attention-card">
+  <div>
+    <span class="pill status-warning">Decision needed</span>
+    <h3>{{ pending|length }} {{ 'company' if pending|length == 1 else 'companies' }} awaiting approval</h3>
+    <p>The agent found these outside your approved set. They are not being searched.</p>
+  </div>
+</section>
+<div class="record-list">
+  {% for c in pending %}
+  <article class="record">
+    <header>
+      <span class="record-title">
+        <strong>{{ c.name }}</strong>
+        {% if c.careers_url %}<small><a href="{{ c.careers_url }}" target="_blank" rel="noopener">careers ↗</a></small>{% endif %}
+      </span>
+      <form method="post" action="/companies/{{ c.id }}/decision" class="record-actions">
+        <button class="primary small" name="decision" value="approve" data-pending-label="Approving">Approve</button>
+        <button class="secondary small" name="decision" value="reject" data-pending-label="Rejecting">Reject</button>
       </form>
-    </li>
-    {% endfor %}
-  </ul>
-</article>
+    </header>
+    {% if c.discovery_rationale %}<p class="record-body">{{ c.discovery_rationale }}</p>{% endif %}
+  </article>
+  {% endfor %}
+</div>
 {% endif %}
 
+{% for group, items in grouped.items() %}
+<section class="section-heading"><div><p class="eyebrow">{{ items|length }} {{ 'company' if items|length == 1 else 'companies' }}</p><h3>{{ group }}</h3></div></section>
 <table>
-  <thead><tr><th>Company</th><th>Status</th><th>ATS</th><th>Open roles</th><th>Last ingest</th><th></th></tr></thead>
+  <thead><tr><th>Company</th><th>Source</th><th>Open roles</th><th>Last collection</th><th></th></tr></thead>
   <tbody>
-  {% for c, job_count in rows %}
+  {% for c, job_count in items %}
   <tr>
-    <td><strong>{{ c.name }}</strong>{% if c.source == "discovered" %} <span class="muted">(discovered)</span>{% endif %}</td>
-    <td>{{ c.status }}</td>
-    <td class="muted">{{ c.ats_type }}{% if c.board_token %}/{{ c.board_token }}{% endif %}</td>
-    <td>{{ job_count }}</td>
-    <td class="muted">
-      {% if c.last_ingest_error %}<span style="color:#cf222e">error: {{ c.last_ingest_error[:60] }}</span>
-      {% elif c.last_ingest_at %}{{ c.last_ingest_at.strftime("%m-%d %H:%M") }}
-      {% else %}—{% endif %}
-    </td>
     <td>
+      <strong>{{ c.name }}</strong>
+      {% if c.source == "discovered" %}<span class="pill">discovered</span>{% endif %}
+    </td>
+    <td class="muted">{{ c.ats_type or "—" }}{% if c.board_token %} · {{ c.board_token }}{% endif %}</td>
+    <td class="numeric">{{ job_count }}</td>
+    <td class="muted">
+      {% if c.last_ingest_error %}<span class="source-error">{{ c.last_ingest_error[:70] }}</span>
+      {% elif c.last_ingest_at %}{{ c.last_ingest_at.strftime("%b %-d, %-I:%M %p") }}
+      {% else %}Not collected yet{% endif %}
+    </td>
+    <td class="row-actions">
       {% if c.status == "active" %}
-      <form method="post" action="/companies/{{ c.id }}/decision"><button name="decision" value="pause" class="secondary outline" style="width:auto;padding:.1rem .5rem;font-size:.8em">pause</button></form>
+      <form method="post" action="/companies/{{ c.id }}/decision"><button class="ghost small" name="decision" value="pause" data-pending-label="Pausing">Pause</button></form>
       {% elif c.status == "paused" %}
-      <form method="post" action="/companies/{{ c.id }}/decision"><button name="decision" value="activate" class="outline" style="width:auto;padding:.1rem .5rem;font-size:.8em">resume</button></form>
+      <form method="post" action="/companies/{{ c.id }}/decision"><button class="ghost small" name="decision" value="activate" data-pending-label="Resuming">Resume</button></form>
       {% endif %}
     </td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<div class="empty-state">
+  <h3>No companies tracked yet</h3>
+  <p>Complete onboarding to pick a starting set, or let the discovery pass propose some.</p>
+</div>
+{% endfor %}
 {% endblock %}

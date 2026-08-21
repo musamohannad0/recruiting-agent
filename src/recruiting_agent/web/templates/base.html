@@ -3,15 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
-  <meta name="theme-color" content="#f5f5f3">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f5f5f3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#15151a" media="(prefers-color-scheme: dark)">
   <title>{% block title %}Recruiting Agent{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/app.css') }}">
-  <script src="https://unpkg.com/htmx.org@2.0.4" defer></script>
+  <link rel="icon" href="{{ url_for('static', path='/favicon.svg') }}" type="image/svg+xml">
+  <!-- Vendored: this dashboard is self-hosted and must work with no internet access. -->
+  <script src="{{ url_for('static', path='/htmx.min.js') }}" defer></script>
   <script src="{{ url_for('static', path='/app.js') }}" defer></script>
 </head>
 <body class="{% block body_class %}app-body{% endblock %}">
 {% block layout %}
+<a class="skip-link" href="#main-content">Skip to content</a>
 <div class="app-shell">
   <aside class="sidebar">
     <a href="/" class="brand" aria-label="Recruiting Agent home">

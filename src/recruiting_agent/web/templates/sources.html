@@ -1,12 +1,53 @@
 {% extends "base.html" %}
+{% block title %}Source health — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Source Health</h2>
-<table><thead><tr><th>Company</th><th>Sources</th><th>Last checked</th><th>Error</th></tr></thead><tbody>
-{% for company in companies %}<tr>
-  <td>{{ company.name }}</td>
-  <td>{% for source in by_company.get(company.id, []) %}<div>{{ source.source_type }} · {{ source.status }}{% if not source.is_authoritative %} <span class="muted">(agentic)</span>{% endif %}</div>{% else %}<span class="muted">Not probed</span>{% endfor %}</td>
-  <td class="muted">{% for source in by_company.get(company.id, []) %}{{ source.last_checked_at or '—' }}{% endfor %}</td>
-  <td class="muted">{% for source in by_company.get(company.id, []) %}{{ source.last_error or '' }}{% endfor %}</td>
-</tr>{% endfor %}
-</tbody></table>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Coverage · Source health</p>
+    <h2>Source health</h2>
+    <p class="lede">Where each company's roles come from, and whether that route is still working. An authoritative source is a real ATS API; an agentic one is a career page the agent has to read.</p>
+  </div>
+  <div class="header-stat"><span>Companies</span><strong>{{ companies|length }}</strong></div>
+</header>
+
+{% if companies %}
+<div class="record-list">
+  {% for company in companies %}
+  {% set sources = by_company.get(company.id, []) %}
+  {% set broken = sources|selectattr('last_error')|list %}
+  <article class="record {{ 'is-failed' if broken }}">
+    <header>
+      <span class="record-title">
+        <strong>{{ company.name }}</strong>
+        {% if sources %}<small>{{ sources|length }} {{ 'source' if sources|length == 1 else 'sources' }}</small>
+        {% else %}<small>Not probed yet</small>{% endif %}
+      </span>
+      {% if broken %}<span class="pill status-failed">needs attention</span>
+      {% elif sources %}<span class="pill status-success">healthy</span>
+      {% else %}<span class="pill">pending</span>{% endif %}
+    </header>
+    {% if sources %}
+    <ul class="source-list">
+      {% for source in sources %}
+      <li>
+        <span class="source-kind">{{ source.source_type }}</span>
+        <span class="source-trust">{{ 'authoritative' if source.is_authoritative else 'agentic' }}</span>
+        <span class="muted">{% if source.last_checked_at %}checked {{ source.last_checked_at.strftime('%b %-d, %-I:%M %p') }}{% else %}never checked{% endif %}</span>
+        {% if source.last_error %}<span class="source-error">{{ source.last_error }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">No source resolved yet. Run <code>uv run ra probe</code> to find this company's board.</p>
+    {% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No companies tracked yet</h3>
+  <p>Approve companies on the Companies page and the agent will resolve a source for each one.</p>
+  <a class="button secondary" href="/companies">Go to companies</a>
+</div>
+{% endif %}
 {% endblock %}

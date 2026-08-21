@@ -1,7 +1,36 @@
 {% extends "base.html" %}
+{% block title %}Feedback — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Explicit Feedback</h2>
-<table><thead><tr><th>Role</th><th>Label</th><th>Reason</th><th>Recorded</th></tr></thead><tbody>
-{% for item, job, company in rows %}<tr><td><a href="/jobs/{{ job.id }}">{{ job.title }}</a><div class="muted">{{ company.name }}</div></td><td>{{ item.label }}</td><td>{{ item.reason }}</td><td class="muted">{{ item.created_at.strftime('%Y-%m-%d') }}</td></tr>{% endfor %}
-</tbody></table>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Calibration · Your corrections</p>
+    <h2>Feedback</h2>
+    <p class="lede">Every time you told the agent a score was wrong. These outrank the agent's own inference and feed the next recalibration.</p>
+  </div>
+  <div class="header-stat"><span>Corrections</span><strong>{{ rows|length }}</strong></div>
+</header>
+
+{% if rows %}
+<div class="record-list">
+  {% for item, job, company in rows %}
+  <article class="record">
+    <header>
+      <span class="record-title">
+        <strong><a href="/jobs/{{ job.id }}">{{ job.title }}</a></strong>
+        <small>{{ company.name }} · {{ item.created_at.strftime('%b %-d, %Y') }}</small>
+      </span>
+      <span class="pill feedback-{{ item.label }}">{{ item.label }}</span>
+    </header>
+    {% if item.reason %}<p class="record-body">{{ item.reason }}</p>{% endif %}
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No corrections recorded</h3>
+  <p>When a score looks wrong, open the role and use “This recommendation misses”. The agent weighs your corrections above its own judgment.</p>
+  <a class="button secondary" href="/matches">Review matches</a>
+</div>
+{% endif %}
+{% if truncated %}<p class="muted">Showing the {{ rows|length if rows is defined else revisions|length }} most recent · {{ truncated }} older not shown.</p>{% endif %}
 {% endblock %}

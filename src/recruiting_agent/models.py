@@ -78,7 +78,7 @@ class Prefilter(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     job_id: int = Field(foreign_key="jobs.id", index=True)
     content_hash: str
-    profile_hash: str
+    profile_hash: str = Field(index=True)
     verdict: PrefilterVerdict
     reason: str = ""
     model: str = ""
@@ -97,7 +97,7 @@ class Match(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     job_id: int = Field(foreign_key="jobs.id", index=True)
     content_hash: str
-    profile_hash: str
+    profile_hash: str = Field(index=True)
     score: int = Field(ge=0, le=100)
     recommendation: Recommendation
     reasoning: str = ""
@@ -108,8 +108,8 @@ class Match(SQLModel, table=True):
     prompt_version: str = ""
     langfuse_trace_id: str | None = None
     cost_usd: float | None = None
-    user_status: str | None = Field(default=None, index=True)  # saved | dismissed | applied
-    created_at: datetime = Field(default_factory=utcnow)
+    # Triage state lives on JobReview so it survives a re-score; see migration 1.
+    created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
 class JobReview(SQLModel, table=True):
@@ -171,6 +171,7 @@ class Run(SQLModel, table=True):
 class CycleStatus(StrEnum):
     running = "running"
     success = "success"
+    partial = "partial"  # finished, but at least one action failed
     failed = "failed"
     skipped = "skipped"
 
@@ -193,6 +194,11 @@ class AgentCycle(SQLModel, table=True):
     stats_json: str = "{}"
     harness_hash: str = ""
     error: str | None = None
+    cost_usd: float = 0.0
+    llm_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
     started_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
 
@@ -209,6 +215,11 @@ class AgentAction(SQLModel, table=True):
     attempts: int = 0
     result_json: str = "{}"
     error: str | None = None
+    cost_usd: float = 0.0
+    llm_calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
     created_at: datetime = Field(default_factory=utcnow)
     finished_at: datetime | None = None
 

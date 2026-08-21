@@ -31,9 +31,7 @@
 <table class="match-table">
   <thead><tr><th>Score</th><th>Role and evaluation</th><th>Posting</th><th>Your status</th></tr></thead>
   <tbody>
-  {% for match, job, company, red_flags in rows %}
-    {{ match_row(match, job, company, red_flags) }}
-  {% endfor %}
+  {% for row in rows %}{{ match_row(row) }}{% endfor %}
   </tbody>
 </table>
 {% endblock %}

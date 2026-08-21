@@ -4,6 +4,7 @@ import hashlib
 import json
 import shutil
 from dataclasses import dataclass
+from functools import lru_cache
 from datetime import datetime, timezone
 from enum import StrEnum
 from pathlib import Path
@@ -77,6 +78,20 @@ DEFAULT_COMPANY_CATALOG = [
     ("Wayve", "Robotics & autonomy", "Private", "Embodied AI company taking an end-to-end approach to autonomy."),
     ("Neuralink", "Robotics & autonomy", "Private", "High-ambition neurotechnology spanning software, hardware, and operations."),
 ]
+
+
+@lru_cache(maxsize=8)
+def _parse_manifest(path: str, stamp: tuple[int, int]) -> dict[str, Any]:
+    """Manifest contents keyed on the file's (mtime_ns, size), so an edit invalidates it."""
+    del stamp  # only present to key the cache
+    return yaml.safe_load(Path(path).read_text()) or {}
+
+
+def read_manifest(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    stat = path.stat()
+    return _parse_manifest(path.as_posix(), (stat.st_mtime_ns, stat.st_size))
 
 
 @dataclass(frozen=True)
@@ -210,17 +225,13 @@ class CandidateWorkspace:
         state = self.load_state()
         if had_state and state.get("stage") != OnboardingStage.ready.value:
             return False
-        if not self.manifest_path.exists():
-            return False
-        manifest = yaml.safe_load(self.manifest_path.read_text()) or {}
-        return manifest.get("status") == OnboardingStage.ready.value
+        return read_manifest(self.manifest_path).get("status") == OnboardingStage.ready.value
 
     @property
     def harness_hash(self) -> str:
-        if self.manifest_path.exists():
-            manifest = yaml.safe_load(self.manifest_path.read_text()) or {}
-            if manifest.get("harness_hash"):
-                return str(manifest["harness_hash"])
+        manifest = read_manifest(self.manifest_path)
+        if manifest.get("harness_hash"):
+            return str(manifest["harness_hash"])
         return self.compute_hash()
 
     def store_resume(self, filename: str, content: bytes) -> Path:

@@ -8,13 +8,14 @@ import uuid
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any, ContextManager
 
 import yaml
 from sqlalchemy import or_, update
 from sqlmodel import Session, func, select
 
+from .agents.llm import UsageTotals, track_usage
 from .db import get_session, init_db
 from .models import (
     ActionStatus,
@@ -27,10 +28,21 @@ from .models import (
     MemoryRevision,
     utcnow,
 )
+from .reporting import humanize_key, summarize_action
 from .workspace import CandidateWorkspace, workspace
 
 SessionFactory = Callable[[], ContextManager[Session]]
 Operation = Callable[[], Any]
+
+
+@dataclass(frozen=True)
+class JournalEntry:
+    """One recorded event, detached from the session that loaded it."""
+
+    id: int
+    event_type: str
+    payload: dict
+    created_at: datetime
 
 
 async def _ingest() -> dict:
@@ -126,10 +138,18 @@ class SearchCoordinator:
                 )
             )
 
+            failed_actions: list[str] = []
             for kind, bucket, operation in action_specs:
                 self._set_phase(cycle.id, kind)
                 key = f"{self.candidate_workspace.harness_hash}:{kind}:{bucket}"
-                stats["actions"][kind] = await self._execute_action(cycle.id, key, kind, operation)
+                outcome = await self._execute_action(cycle.id, key, kind, operation)
+                stats["actions"][kind] = outcome
+                if outcome["status"] == "failed":
+                    # A failing probe must not cost the operator this cycle's matching.
+                    failed_actions.append(kind)
+                    self._record_event(
+                        "action_failed", {"kind": kind, "error": outcome.get("error", "")}, cycle.id
+                    )
 
             corrections = self._explicit_feedback_count()
             threshold = int(cadence["feedback_recalibration_threshold"])
@@ -141,8 +161,17 @@ class SearchCoordinator:
                 )
                 stats["recalibration_due"] = True
 
-            self._finish_cycle(cycle.id, CycleStatus.success, stats=stats)
-            return {"status": CycleStatus.success.value, "cycle_id": cycle.id, **stats}
+            usage = self._cycle_usage(cycle.id)
+            stats.update(usage.as_dict())
+            status = CycleStatus.partial if failed_actions else CycleStatus.success
+            summary = (
+                f"{len(failed_actions)} of {len(action_specs)} actions failed: "
+                + ", ".join(humanize_key(kind) for kind in failed_actions)
+                if failed_actions
+                else None
+            )
+            self._finish_cycle(cycle.id, status, stats=stats, error=summary, usage=usage)
+            return {"status": status.value, "cycle_id": cycle.id, **stats}
         except Exception as exc:
             if cycle is not None:
                 self._finish_cycle(
@@ -226,6 +255,11 @@ class SearchCoordinator:
     async def _execute_action(
         self, cycle_id: int, key: str, kind: str, operation: Operation
     ) -> dict[str, Any]:
+        """Run one idempotent action, recording what it produced and what it cost.
+
+        Returns rather than raises on failure: the caller decides whether a failed
+        action ends the cycle, and it should not, so the remaining stages still run.
+        """
         with self.session_factory() as session:
             action = session.exec(
                 select(AgentAction).where(AgentAction.idempotency_key == key)
@@ -244,26 +278,30 @@ class SearchCoordinator:
             session.refresh(action)
             action_id = action.id
 
-        try:
-            result = operation()
-            if inspect.isawaitable(result):
-                result = await result
-            normalized = result if isinstance(result, dict) else {"result": result}
-        except Exception as exc:
-            with self.session_factory() as session:
-                action = session.get(AgentAction, action_id)
-                action.status = ActionStatus.failed
-                action.error = str(exc)[:1000]
-                action.finished_at = self.now()
-                session.add(action)
-                session.commit()
-            raise
+        with track_usage() as usage:
+            try:
+                result = operation()
+                if inspect.isawaitable(result):
+                    result = await result
+                normalized = result if isinstance(result, dict) else {"result": result}
+            except Exception as exc:
+                message = str(exc)[:1000]
+                with self.session_factory() as session:
+                    action = session.get(AgentAction, action_id)
+                    action.status = ActionStatus.failed
+                    action.error = message
+                    action.finished_at = self.now()
+                    self._apply_usage(action, usage)
+                    session.add(action)
+                    session.commit()
+                return {"status": "failed", "error": message, "kind": kind}
 
         with self.session_factory() as session:
             action = session.get(AgentAction, action_id)
             action.status = ActionStatus.success
             action.result_json = json.dumps(normalized, default=str)
             action.finished_at = self.now()
+            self._apply_usage(action, usage)
             session.add(action)
             session.add(
                 AgentEvent(
@@ -276,29 +314,121 @@ class SearchCoordinator:
             session.commit()
         return {"status": "success", "result": normalized}
 
-    def _consolidate_memory(self) -> dict[str, Any]:
+    @staticmethod
+    def _apply_usage(action: AgentAction, usage: UsageTotals) -> None:
+        action.cost_usd = round(usage.cost_usd, 6)
+        action.llm_calls = usage.llm_calls
+        action.input_tokens = usage.input_tokens
+        action.output_tokens = usage.output_tokens
+        action.cached_tokens = usage.cache_read_tokens
+
+    def _cycle_usage(self, cycle_id: int) -> UsageTotals:
+        """Roll this cycle's actions up into one set of totals."""
+        totals = UsageTotals()
         with self.session_factory() as session:
-            events = session.exec(select(AgentEvent).order_by(AgentEvent.id)).all()
-            if not events:
+            actions = session.exec(
+                select(AgentAction).where(AgentAction.cycle_id == cycle_id)
+            ).all()
+            for action in actions:
+                totals.llm_calls += action.llm_calls
+                totals.input_tokens += action.input_tokens
+                totals.output_tokens += action.output_tokens
+                totals.cache_read_tokens += action.cached_tokens
+                totals.cost_usd += action.cost_usd or 0.0
+                totals.errors += 1 if action.status == ActionStatus.failed else 0
+        return totals
+
+    #: Events folded into one journal rewrite. The journal is a rolling window, not an
+    #: append-only log, so it stays inside a prompt budget as the search runs for months.
+    JOURNAL_EVENT_WINDOW = 200
+
+    def _consolidate_memory(self) -> dict[str, Any]:
+        """Rewrite the candidate's search journal as prose an agent can read back.
+
+        This file is loaded as context on later runs, so it holds sentences rather
+        than serialised payloads: a JSON dump costs tokens and tells the next agent
+        nothing a summary would not.
+        """
+        with self.session_factory() as session:
+            rows = session.exec(
+                select(AgentEvent)
+                .order_by(AgentEvent.id.desc())
+                .limit(self.JOURNAL_EVENT_WINDOW)
+            ).all()
+            if not rows:
                 return {"events": 0}
-            lines = ["# Search Journal", ""]
-            for event in events[-100:]:
-                lines.append(f"- Event {event.id}: `{event.event_type}` — {event.payload_json}")
-            content = "\n".join(lines) + "\n"
-            revision = MemoryRevision(
-                section="memory/search-journal.md",
-                content=content,
-                status="approved",
-                source_event_start=events[0].id,
-                source_event_end=events[-1].id,
-                decided_at=self.now(),
+            # Read everything needed off the ORM instances now: commit expires them,
+            # and the session closes before the file is written and the result returned.
+            events = [
+                JournalEntry(
+                    id=event.id,
+                    event_type=event.event_type,
+                    payload=json.loads(event.payload_json or "{}") if event.payload_json else {},
+                    created_at=event.created_at,
+                )
+                for event in reversed(rows)
+            ]
+            content = self._render_journal(events)
+            session.add(
+                MemoryRevision(
+                    section="memory/search-journal.md",
+                    content=content,
+                    status="approved",
+                    source_event_start=events[0].id,
+                    source_event_end=events[-1].id,
+                    decided_at=self.now(),
+                )
             )
-            session.add(revision)
             session.commit()
         target = self.candidate_workspace.root / "memory" / "search-journal.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content)
         return {"events": len(events), "last_event_id": events[-1].id}
+
+    def _render_journal(self, events: list[JournalEntry]) -> str:
+        """Group events by day and describe each one in a sentence."""
+        lines = [
+            "# Search journal",
+            "",
+            "What the agent has done recently, newest day last. Written by the coordinator "
+            "after each memory-consolidation pass.",
+            "",
+        ]
+        totals: dict[str, int] = {}
+        by_day: dict[str, list[JournalEntry]] = {}
+        # Group and order by timestamp rather than insertion order, so a backfilled or
+        # out-of-order event still reads correctly.
+        for event in sorted(events, key=lambda entry: entry.created_at):
+            by_day.setdefault(event.created_at.strftime("%Y-%m-%d"), []).append(event)
+
+        for day, day_events in by_day.items():
+            lines.append(f"## {day}")
+            lines.append("")
+            for event in day_events:
+                payload = event.payload if isinstance(event.payload, dict) else {"result": event.payload}
+                kind = event.event_type.removesuffix("_completed")
+                totals[kind] = totals.get(kind, 0) + 1
+                if event.event_type.endswith("_completed"):
+                    sentence = summarize_action(kind, "success", payload)
+                elif event.event_type == "action_failed":
+                    sentence = f"{humanize_key(payload.get('kind', 'An action'))} failed: {payload.get('error', 'no detail recorded')}"
+                elif event.event_type == "recalibration_due":
+                    sentence = (
+                        f"{payload.get('explicit_feedback', 0)} explicit corrections have accumulated, "
+                        f"at or past the threshold of {payload.get('threshold', 0)}; the rubric wants review."
+                    )
+                else:
+                    sentence = summarize_action(kind, "success", payload)
+                lines.append(f"- **{event.created_at.strftime('%H:%M')}** — {sentence}")
+            lines.append("")
+
+        if totals:
+            lines.append("## Totals over this window")
+            lines.append("")
+            for kind, count in sorted(totals.items(), key=lambda item: -item[1]):
+                lines.append(f"- {humanize_key(kind)}: {count} time{'s' if count != 1 else ''}")
+            lines.append("")
+        return "\n".join(lines)
 
     def _set_phase(self, cycle_id: int, phase: str) -> None:
         with self.session_factory() as session:
@@ -314,6 +444,7 @@ class SearchCoordinator:
         *,
         stats: dict[str, Any],
         error: str | None = None,
+        usage: UsageTotals | None = None,
     ) -> None:
         with self.session_factory() as session:
             cycle = session.get(AgentCycle, cycle_id)
@@ -323,6 +454,12 @@ class SearchCoordinator:
             cycle.error = error
             cycle.finished_at = self.now()
             cycle.checkpoint_json = json.dumps({"last_event_id": self._latest_event_id(session)})
+            rollup = usage if usage is not None else self._cycle_usage(cycle_id)
+            cycle.cost_usd = round(rollup.cost_usd, 6)
+            cycle.llm_calls = rollup.llm_calls
+            cycle.input_tokens = rollup.input_tokens
+            cycle.output_tokens = rollup.output_tokens
+            cycle.cached_tokens = rollup.cache_read_tokens
             session.add(cycle)
             session.commit()
 

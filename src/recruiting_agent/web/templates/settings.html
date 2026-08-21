@@ -1,12 +1,43 @@
 {% extends "base.html" %}
+{% block title %}Settings — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Settings</h2>
-<form method="post" action="/settings" style="max-width: 24rem">
-  <label>Default minimum score on Matches page
-    <input type="number" name="min_score_display" value="{{ min_score_display }}" min="0" max="100">
-  </label>
-  <button type="submit">Save</button>
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Configuration</p>
+    <h2>Settings</h2>
+    <p class="lede">Display preferences live here. What the agent searches for lives in your search policy, and how often it runs lives in your cadence file.</p>
+  </div>
+</header>
+
+<form method="post" action="/settings" class="form-card settings-form">
+  <div class="form-stack">
+    <label>Default minimum score on Matches
+      <small class="field-help">Roles below this score are hidden until you widen the filter. The rubric treats 75+ as apply and 60–74 as maybe.</small>
+      <input type="number" name="min_score_display" value="{{ min_score_display }}" min="0" max="100">
+    </label>
+    <div class="form-actions">
+      <button class="primary" type="submit" data-pending-label="Saving">Save</button>
+    </div>
+  </div>
 </form>
-<p class="muted">Models and schedules are configured in <code>.env</code> / <code>src/recruiting_agent/settings.py</code>.
-Profile lives in <code>profile/resume.md</code> and <code>profile/profile.yaml</code> — edits trigger re-evaluation on the next match run.</p>
+
+<section class="section-heading"><div><p class="eyebrow">Where the rest lives</p><h3>Everything else</h3></div></section>
+<dl class="settings-map">
+  <div>
+    <dt>What counts as a good role</dt>
+    <dd>Your approved search constitution, decision rubric, and calibration anchors — <a href="/search-state">view active policy</a>. Editing them changes the harness hash and re-evaluates open roles.</dd>
+  </div>
+  <div>
+    <dt>Which companies are searched</dt>
+    <dd><a href="/companies">Companies</a> for approvals and pauses; <code>workspace/policy/companies.yaml</code> for the strict/exploratory scope.</dd>
+  </div>
+  <div>
+    <dt>How often the agent runs</dt>
+    <dd><code>workspace/policy/cadence.yaml</code>. The schedule only advances while <code>uv run ra worker</code> is running.</dd>
+  </div>
+  <div>
+    <dt>Models, retries, and spend limits</dt>
+    <dd><code>.env</code>, read by <code>src/recruiting_agent/settings.py</code>. Per-cycle spend is reported on <a href="/activity">Activity</a>.</dd>
+  </div>
+</dl>
 {% endblock %}

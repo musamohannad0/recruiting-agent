@@ -35,6 +35,23 @@
     button.innerHTML = `<span class="spinner"></span>${button.dataset.pendingLabel || "Saving…"}`;
     showToast(button.dataset.pendingMessage || "Received — the agent is updating it.");
   });
+  // An innerHTML swap destroys the button that was clicked, so focus falls to <body>.
+  // Put it back on an equivalent control in the replacement markup.
+  document.body.addEventListener("htmx:beforeSwap", (event) => {
+    const button = event.detail.elt;
+    if (button instanceof HTMLButtonElement) {
+      button.dataset.refocusLabel = (button.textContent || "").trim();
+    }
+  });
+  document.body.addEventListener("htmx:afterSwap", (event) => {
+    const target = event.detail.target;
+    const label = event.detail.requestConfig?.elt?.dataset?.refocusLabel;
+    if (!(target instanceof HTMLElement)) return;
+    const buttons = [...target.querySelectorAll("button")];
+    const next = buttons.find((b) => b.textContent.trim() === label) || buttons[0];
+    next?.focus();
+  });
+
   document.body.addEventListener("htmx:responseError", (event) => {
     const button = event.detail.elt;
     if (!(button instanceof HTMLButtonElement)) return;
@@ -131,78 +148,79 @@
 
   const activityRoot = document.querySelector("[data-activity-poll]");
   if (activityRoot) {
-    const filterButtons = [...activityRoot.querySelectorAll("[data-activity-filter]")];
-    const actionRows = [...activityRoot.querySelectorAll("[data-activity-status]")];
-    const filterEmpty = activityRoot.querySelector("[data-filter-empty]");
-    const rememberDisclosures = () => {
-      const open = [...activityRoot.querySelectorAll("[data-disclosure-id][open]")].map(
-        (detail) => detail.dataset.disclosureId,
-      );
-      window.sessionStorage.setItem("activity-open", JSON.stringify(open));
-    };
-    try {
-      const open = JSON.parse(window.sessionStorage.getItem("activity-open") || "[]");
-      open.forEach((id) => activityRoot.querySelector(`[data-disclosure-id="${id}"]`)?.setAttribute("open", ""));
-      window.sessionStorage.removeItem("activity-open");
-    } catch (_) {}
+    let activeFilter = "all";
 
-    filterButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        const filter = button.dataset.activityFilter;
-        filterButtons.forEach((candidate) => {
-          const active = candidate === button;
-          candidate.classList.toggle("active", active);
-          candidate.setAttribute("aria-pressed", String(active));
-        });
-        let visible = 0;
-        actionRows.forEach((row) => {
-          row.hidden = filter !== "all" && row.dataset.activityStatus !== filter;
-          if (!row.hidden) visible += 1;
-        });
-        if (filterEmpty) filterEmpty.hidden = visible !== 0;
+    // Delegated so the handlers survive an htmx swap of the whole body.
+    const applyFilter = (filter) => {
+      activeFilter = filter;
+      activityRoot.querySelectorAll("[data-activity-filter]").forEach((button) => {
+        const active = button.dataset.activityFilter === filter;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
       });
+      let visible = 0;
+      activityRoot.querySelectorAll("[data-activity-status]").forEach((row) => {
+        row.hidden = filter !== "all" && row.dataset.activityStatus !== filter;
+        if (!row.hidden) visible += 1;
+      });
+      const empty = activityRoot.querySelector("[data-filter-empty]");
+      if (empty) empty.hidden = visible !== 0;
+    };
+
+    activityRoot.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-activity-filter]");
+      if (button) applyFilter(button.dataset.activityFilter);
     });
 
-    activityRoot.querySelectorAll("[data-copy-payload]").forEach((button) => {
-      button.addEventListener("click", async () => {
-        const payload = button.closest(".payload-block")?.querySelector("pre")?.textContent || "";
-        try {
-          await navigator.clipboard.writeText(payload);
-          button.textContent = "Copied";
-          showToast("Recorded result copied.");
-          window.setTimeout(() => { button.textContent = "Copy JSON"; }, 1400);
-        } catch (_) {
-          showToast("Could not copy this result.");
-        }
+    // A swap replaces every <details>, so remember which were open and restore them.
+    const openDisclosures = new Set();
+    const rememberDisclosures = () => {
+      openDisclosures.clear();
+      activityRoot
+        .querySelectorAll("[data-disclosure-id][open]")
+        .forEach((detail) => openDisclosures.add(detail.dataset.disclosureId));
+    };
+    const restoreDisclosures = () => {
+      openDisclosures.forEach((id) => {
+        activityRoot.querySelector(`[data-disclosure-id="${id}"]`)?.setAttribute("open", "");
       });
+    };
+
+    activityRoot.addEventListener("htmx:beforeSwap", rememberDisclosures);
+    activityRoot.addEventListener("htmx:afterSwap", () => {
+      restoreDisclosures();
+      applyFilter(activeFilter);
+      activityRoot.classList.remove("is-updating");
     });
 
     let activitySignature = activityRoot.dataset.signature;
     const pollActivity = async () => {
+      // Back off while the tab is hidden; nobody is watching the numbers move.
       if (document.hidden) {
-        window.setTimeout(pollActivity, 2500);
+        window.setTimeout(pollActivity, 8000);
         return;
       }
       try {
-        const response = await fetch("/activity/status", { headers: { "Accept": "application/json" } });
+        const response = await fetch("/activity/status", { headers: { Accept: "application/json" } });
         const data = await response.json();
         const livePhase = activityRoot.querySelector("[data-live-phase]");
         const liveStatus = activityRoot.querySelector("[data-live-status]");
-        if (livePhase) livePhase.textContent = data.phase_label;
-        if (liveStatus) {
+        if (livePhase && livePhase.textContent !== data.phase_label) livePhase.textContent = data.phase_label;
+        if (liveStatus && liveStatus.textContent !== data.status) {
           liveStatus.textContent = data.status;
           liveStatus.className = `live-status status-${data.status}`;
         }
         if (activitySignature && data.signature !== activitySignature) {
-          rememberDisclosures();
+          activitySignature = data.signature;
           activityRoot.classList.add("is-updating");
-          window.setTimeout(() => window.location.reload(), 180);
-          return;
+          activityRoot.dispatchEvent(new CustomEvent("refresh-activity"));
+        } else {
+          activitySignature = data.signature;
         }
-        activitySignature = data.signature;
       } catch (_) {}
       window.setTimeout(pollActivity, 2500);
     };
     window.setTimeout(pollActivity, 1500);
+    applyFilter("all");
   }
 })();

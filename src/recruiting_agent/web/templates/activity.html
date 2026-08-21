@@ -1,121 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Agent activity — Recruiting Agent{% endblock %}
 {% block content %}
-<div class="activity-page" data-activity-poll data-signature="{{ activity_signature }}">
-  <header class="activity-hero activity-reveal">
-    <div>
-      <p class="eyebrow">Agent activity · Live</p>
-      <h2>The search, in motion.</h2>
-      <p class="lede">See what ran, what changed, and what needs you. Every action leaves a checkpoint.</p>
-    </div>
-    <div class="live-agent-card {{ 'is-running' if latest_cycle and latest_cycle.status == 'running' }}" aria-live="polite">
-      <span class="live-beacon" aria-hidden="true"><i></i></span>
-      <div>
-        <small>{{ 'Working now' if latest_cycle and latest_cycle.status == 'running' else 'Latest state' }}</small>
-        <strong data-live-phase>{{ current_action.title if current_action else 'Waiting for first cycle' }}</strong>
-        <span>{{ current_action.summary if current_action else 'No agent actions have run yet.' }}</span>
-      </div>
-      <span class="live-status status-{{ latest_cycle.status if latest_cycle else 'idle' }}" data-live-status>{{ latest_cycle.status if latest_cycle else 'idle' }}</span>
-    </div>
-  </header>
-
-  <section class="activity-metrics activity-reveal" aria-label="Agent totals">
-    <div><strong>{{ cycles|length }}</strong><span>cycles recorded</span></div>
-    <div><strong>{{ completed_count }}</strong><span>actions completed</span></div>
-    <div><strong>{{ '{:,}'.format(collected_roles) }}</strong><span>roles collected</span></div>
-    <div><strong>{{ failed_count }}</strong><span>actions failed</span></div>
-  </section>
-
-  {% if latest_cycle %}
-  <section class="activity-section activity-reveal">
-    <div class="activity-section-heading">
-      <div>
-        <p class="eyebrow">Cycle {{ latest_cycle.id }} · {{ latest_cycle.trigger|replace('_', ' ') }}</p>
-        <h3>Current run</h3>
-      </div>
-      <div class="cycle-meta"><span>Harness {{ latest_cycle.harness_hash[:8] }}</span><span>Started {{ latest_cycle.started_at.strftime('%b %-d · %-I:%M %p') }}</span></div>
-    </div>
-    <div class="phase-track" aria-label="Current cycle progress">
-      {% for phase in phases %}
-      <div class="phase-step is-{{ phase.status }}">
-        <span class="phase-marker" aria-hidden="true">{{ '✓' if phase.status == 'success' else loop.index }}</span>
-        <div><strong>{{ phase.title }}</strong><small>{{ phase.summary }}</small></div>
-      </div>
-      {% endfor %}
-    </div>
-    {% if latest_cycle.error %}<div class="activity-alert"><strong>Cycle stopped</strong><span>{{ latest_cycle.error }}</span></div>{% endif %}
-  </section>
-  {% endif %}
-
-  <section class="activity-section activity-reveal">
-    <div class="activity-section-heading">
-      <div><p class="eyebrow">Execution log</p><h3>Agent actions</h3></div>
-      {% if actions %}
-      <div class="activity-filters" role="group" aria-label="Filter agent actions">
-        <button type="button" class="active" data-activity-filter="all" aria-pressed="true">All</button>
-        <button type="button" data-activity-filter="running" aria-pressed="false">Running</button>
-        <button type="button" data-activity-filter="success" aria-pressed="false">Complete</button>
-        <button type="button" data-activity-filter="failed" aria-pressed="false">Failed</button>
-      </div>
-      {% endif %}
-    </div>
-    {% if actions %}
-    <div class="activity-list">
-      {% for action in actions %}
-      <details class="activity-action is-{{ action.status }}" data-activity-status="{{ action.status }}" data-disclosure-id="action-{{ action.id }}">
-        <summary>
-          <span class="action-state" aria-hidden="true"><i></i></span>
-          <span class="action-copy"><strong>{{ action.title }}</strong><small>{{ action.detail }}</small></span>
-          <span class="action-outcome"><strong>{{ action.summary }}</strong><small>{{ action.duration }} · {{ action.created_at.strftime('%b %-d, %-I:%M %p') }}</small></span>
-          <span class="disclosure-chevron" aria-hidden="true"></span>
-        </summary>
-        <div class="activity-disclosure">
-          <div class="action-facts">
-            <div><span>Status</span><strong>{{ action.status }}</strong></div>
-            <div><span>Cycle</span><strong>{{ action.cycle_id }}</strong></div>
-            <div><span>Attempts</span><strong>{{ action.attempts }}</strong></div>
-            <div><span>Duration</span><strong>{{ action.duration }}</strong></div>
-          </div>
-          {% if action.error %}<div class="activity-alert"><strong>Error</strong><span>{{ action.error }}</span></div>{% endif %}
-          {% if action.payload %}<div class="payload-block"><div><span>Recorded result</span><button type="button" class="ghost small" data-copy-payload>Copy JSON</button></div><pre>{{ action.payload_pretty }}</pre></div>{% else %}<p class="muted">No result has been recorded yet. This action is still in progress.</p>{% endif %}
-        </div>
-      </details>
-      {% endfor %}
-    </div>
-    <div class="activity-empty" data-filter-empty hidden>No actions match this filter.</div>
-    {% else %}
-    <div class="activity-empty"><strong>No actions yet</strong><span>The first coordinator cycle will appear here as soon as it starts.</span></div>
-    {% endif %}
-  </section>
-
-  <section class="activity-section activity-reveal">
-    <details class="event-drawer" data-disclosure-id="system-events">
-      <summary><span><span class="eyebrow">Durable audit trail</span><strong>System events</strong></span><span>{{ events|length }} recorded <i class="disclosure-chevron" aria-hidden="true"></i></span></summary>
-      <div class="event-stream">
-        {% for event in events %}
-        <article class="event-row">
-          <span class="event-index">{{ event.id }}</span>
-          <div><strong>{{ event.label }}</strong><small>{{ event.source }} · Cycle {{ event.cycle_id or '—' }} · {{ event.created_at.strftime('%b %-d, %-I:%M:%S %p') }}</small></div>
-          <details><summary>Payload</summary><pre>{{ event.payload_pretty }}</pre></details>
-        </article>
-        {% else %}
-        <div class="activity-empty"><strong>No events recorded</strong><span>Validated action results will form the durable audit trail.</span></div>
-        {% endfor %}
-      </div>
-    </details>
-  </section>
-
-  {% if cycles|length > 1 %}
-  <section class="activity-section activity-reveal">
-    <details class="event-drawer" data-disclosure-id="cycle-history">
-      <summary><span><span class="eyebrow">Previous work</span><strong>Cycle history</strong></span><span>{{ cycles|length - 1 }} earlier <i class="disclosure-chevron" aria-hidden="true"></i></span></summary>
-      <div class="cycle-history">
-        {% for cycle in cycles[1:] %}
-        <div><span class="action-state is-{{ cycle.status }}"><i></i></span><strong>Cycle {{ cycle.id }}</strong><span>{{ cycle.trigger|replace('_', ' ') }}</span><span>{{ cycle.started_at.strftime('%b %-d · %-I:%M %p') }}</span><span class="live-status status-{{ cycle.status }}">{{ cycle.status }}</span></div>
-        {% endfor %}
-      </div>
-    </details>
-  </section>
-  {% endif %}
+{#
+  The body is swapped in place by htmx rather than reloading the page: a reload
+  loses scroll position and every open disclosure mid-cycle.
+#}
+<div class="activity-page"
+     data-activity-poll
+     data-signature="{{ activity_signature }}"
+     hx-get="/activity"
+     hx-trigger="refresh-activity"
+     hx-target="this"
+     hx-swap="innerHTML">
+  {% include "partials/activity_body.html" %}
 </div>
 {% endblock %}

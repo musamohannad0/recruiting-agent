@@ -1,32 +1,49 @@
 {% extends "base.html" %}
+{% block title %}All roles — Recruiting Agent{% endblock %}
 {% block content %}
-<h2>Jobs</h2>
-<form method="get" action="/jobs" class="grid">
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Coverage · Everything collected</p>
+    <h2>All roles</h2>
+    <p class="lede">Every open posting the agent has collected, evaluated or not. Ranked recommendations live on <a href="/matches">Matches</a>.</p>
+  </div>
+  <div class="header-stat"><span>Open roles</span><strong>{{ '{:,}'.format(rows|length) }}</strong></div>
+</header>
+
+<form method="get" action="/jobs" class="match-filters">
   <label>Company
     <select name="company_id">
-      <option value="">all</option>
+      <option value="">All companies</option>
       {% for c in companies %}
       <option value="{{ c.id }}" {{ "selected" if company_id == c.id }}>{{ c.name }}</option>
       {% endfor %}
     </select>
   </label>
   <label>Title contains
-    <input type="text" name="q" value="{{ q }}">
+    <input type="search" name="q" value="{{ q }}" placeholder="e.g. platform">
   </label>
-  <label>&nbsp;<button type="submit">Filter</button></label>
+  <label class="filter-action"><span>Update results</span><button class="primary" type="submit">Apply filters</button></label>
 </form>
-<p class="muted">{{ rows|length }} open roles</p>
+
+{% if rows %}
 <table>
-  <thead><tr><th>Title</th><th>Company</th><th>Location</th><th>First seen</th></tr></thead>
+  <thead><tr><th>Role</th><th>Company</th><th>Location</th><th>First seen</th></tr></thead>
   <tbody>
   {% for job, company in rows %}
   <tr>
-    <td><a href="/jobs/{{ job.id }}">{{ job.title }}</a></td>
+    <td><a href="/jobs/{{ job.id }}"><strong>{{ job.title }}</strong></a>{% if job.department %}<div class="muted">{{ job.department }}</div>{% endif %}</td>
     <td>{{ company.name }}</td>
     <td class="muted">{{ job.location or "—" }}</td>
-    <td class="muted">{{ job.first_seen_at.strftime("%Y-%m-%d") }}</td>
+    <td class="muted numeric">{{ job.first_seen_at.strftime("%b %-d, %Y") }}</td>
   </tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<div class="empty-state">
+  <h3>{{ 'No roles match this filter' if (q or company_id) else 'No roles collected yet' }}</h3>
+  <p>{{ 'Try a broader title or clear the company filter.' if (q or company_id) else 'The first collection pass runs as soon as the coordinator wakes up.' }}</p>
+  <a class="button secondary" href="{{ '/jobs' if (q or company_id) else '/activity' }}">{{ 'Clear filters' if (q or company_id) else 'View agent activity' }}</a>
+</div>
+{% endif %}
 {% endblock %}

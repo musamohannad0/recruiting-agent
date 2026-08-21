@@ -165,7 +165,8 @@ async def test_failed_action_retries_from_checkpoint(tmp_path, session_factory):
             raise RuntimeError("temporary failure")
         return {"recovered": True}
 
-    operations = fake_operations([])
+    calls: list[str] = []
+    operations = fake_operations(calls)
     operations.ingest = flaky_ingest
     coordinator = SearchCoordinator(
         ready_workspace(tmp_path),
@@ -175,8 +176,14 @@ async def test_failed_action_retries_from_checkpoint(tmp_path, session_factory):
         initialize=lambda: None,
     )
 
-    with pytest.raises(RuntimeError, match="temporary failure"):
-        await coordinator.run_cycle("test")
+    first = await coordinator.run_cycle("test")
+
+    # One broken stage costs that stage, not the cycle: matching still runs.
+    assert first["status"] == "partial"
+    assert "match" in calls and "scout" in calls
+    assert first["actions"]["ingest"]["status"] == "failed"
+    assert first["actions"]["match"]["status"] == "success"
+
     result = await coordinator.run_cycle("retry")
 
     assert result["status"] == "success"
@@ -184,3 +191,64 @@ async def test_failed_action_retries_from_checkpoint(tmp_path, session_factory):
         ingest = session.exec(select(AgentAction).where(AgentAction.kind == "ingest")).one()
         assert ingest.attempts == 2
         assert ingest.status == "success"
+        cycles = session.exec(select(AgentCycle).order_by(AgentCycle.id)).all()
+        assert [cycle.status for cycle in cycles] == ["partial", "success"]
+        assert "Ingest" in (cycles[0].error or "")
+
+
+@pytest.mark.asyncio
+async def test_memory_consolidation_writes_prose_not_json(tmp_path, session_factory):
+    """The journal is fed back to agents as context, so it must read as sentences."""
+    operations = fake_operations([])
+    operations.consolidate_memory = None  # exercise the coordinator's own consolidation
+    coordinator = SearchCoordinator(
+        ready_workspace(tmp_path),
+        session_factory,
+        operations,
+        now=lambda: datetime(2026, 8, 10, 12, tzinfo=timezone.utc),
+        initialize=lambda: None,
+    )
+
+    await coordinator.run_cycle("test")
+    journal = (tmp_path / "memory" / "search-journal.md").read_text()
+
+    assert "# Search journal" in journal
+    # No serialised payloads: no braces, no quoted keys, no JSON punctuation.
+    assert "{" not in journal and "}" not in journal
+    assert '":' not in journal
+    assert "Totals over this window" in journal
+
+
+@pytest.mark.asyncio
+async def test_cycle_records_what_it_spent(tmp_path, session_factory):
+    from recruiting_agent.agents.llm import LLMResult, current_usage
+
+    async def ingest_that_calls_a_model():
+        usage = current_usage()
+        assert usage is not None, "actions must run inside a usage-tracking scope"
+        usage.add(LLMResult(data={}, trace_id=None, cost_usd=0.25, input_tokens=900,
+                            output_tokens=100, cache_read_tokens=4_000))
+        return {"new": 3}
+
+    operations = fake_operations([])
+    operations.ingest = ingest_that_calls_a_model
+    coordinator = SearchCoordinator(
+        ready_workspace(tmp_path),
+        session_factory,
+        operations,
+        now=lambda: datetime(2026, 8, 10, 12, tzinfo=timezone.utc),
+        initialize=lambda: None,
+    )
+
+    result = await coordinator.run_cycle("test")
+
+    assert result["cost_usd"] == pytest.approx(0.25)
+    assert result["llm_calls"] == 1
+    assert result["cached_tokens"] == 4_000
+    with session_factory() as session:
+        ingest = session.exec(select(AgentAction).where(AgentAction.kind == "ingest")).one()
+        assert ingest.cost_usd == pytest.approx(0.25)
+        assert ingest.cached_tokens == 4_000
+        cycle = session.exec(select(AgentCycle)).one()
+        assert cycle.cost_usd == pytest.approx(0.25)
+        assert cycle.llm_calls == 1

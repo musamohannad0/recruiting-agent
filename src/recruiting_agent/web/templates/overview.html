@@ -29,7 +29,7 @@
 {% if top %}
 <table class="match-table">
   <thead><tr><th>Score</th><th>Role and reasoning</th><th>Posting</th><th>Your status</th></tr></thead>
-  <tbody>{% for match, job, company, red_flags in top %}{{ match_row(match, job, company, red_flags) }}{% endfor %}</tbody>
+  <tbody>{% for row in top %}{{ match_row(row) }}{% endfor %}</tbody>
 </table>
 {% elif jobs_active %}
 <div class="empty-state"><h3>{{ jobs_active }} roles are under evaluation</h3><p>None has crossed your 75-point attention threshold yet. Lower-confidence possibilities remain visible in Matches.</p><a class="button secondary" href="/matches">Browse all evaluations</a></div>
